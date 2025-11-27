@@ -1,0 +1,7 @@
+{
+    "python.analysis.extraPaths": [
+        "/home/johannes/Programme/Slicer/lib/Slicer-5.8/qt-scripted-modules",
+        "/home/johannes/Programme/Slicer/bin/Python",
+        "/home/johannes/Programme/Slicer/slicer.org/Extensions-33241/SlicerIGT/lib/Slicer-5.8/qt-scripted-modules"
+    ]
+}
