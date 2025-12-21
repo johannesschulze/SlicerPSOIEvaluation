@@ -1,5 +1,5 @@
 #-----------------------------------------------------------------------------
-set(MODULE_NAME BSSOPSIWorkflowModule)
+set(MODULE_NAME PSOIEvaluation)
 
 #-----------------------------------------------------------------------------
 set(MODULE_PYTHON_SCRIPTS
