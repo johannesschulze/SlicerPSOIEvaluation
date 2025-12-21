@@ -1,28 +1,31 @@
-cmake_minimum_required(VERSION 3.16.3...3.19.7 FATAL_ERROR)
-
-project(PSOIEvaluation)
+#-----------------------------------------------------------------------------
+set(MODULE_NAME BSSOPSIWorkflowModule)
 
 #-----------------------------------------------------------------------------
-# Extension meta-information
-set(EXTENSION_HOMEPAGE "https://www.slicer.org/wiki/Documentation/Nightly/Extensions/BSSOWorkflow")
-set(EXTENSION_CONTRIBUTORS "Johannes Schulze (Bundeswehrkrankenhaus Ulm)")
-set(EXTENSION_DESCRIPTION "Extension for managing the Workflow of the BSSO-PSI Research at German Military Forces Hospital
+set(MODULE_PYTHON_SCRIPTS
+  ${MODULE_NAME}.py
+  )
 
-Proveides the BSSOWorkflow-Module")
-set(EXTENSION_ICONURL "https://www.example.com/Slicer/Extensions/BSSOWorkflow.png")
-set(EXTENSION_SCREENSHOTURLS "https://www.example.com/Slicer/Extensions/BSSOWorkflow/Screenshots/1.png")
-set(EXTENSION_DEPENDS "NA") # Specified as a list or "NA" if no dependencies
-
-#-----------------------------------------------------------------------------
-# Extension dependencies
-find_package(Slicer REQUIRED)
-include(${Slicer_USE_FILE})
+set(MODULE_PYTHON_RESOURCES
+  Resources/Icons/${MODULE_NAME}.png
+  Resources/UI/${MODULE_NAME}.ui
+  )
 
 #-----------------------------------------------------------------------------
-# Extension modules
-add_subdirectory(PSOIEvaluationModule)
-## NEXT_MODULE
+slicerMacroBuildScriptedModule(
+  NAME ${MODULE_NAME}
+  SCRIPTS ${MODULE_PYTHON_SCRIPTS}
+  RESOURCES ${MODULE_PYTHON_RESOURCES}
+  WITH_GENERIC_TESTS
+  )
 
 #-----------------------------------------------------------------------------
-include(${Slicer_EXTENSION_GENERATE_CONFIG})
-include(${Slicer_EXTENSION_CPACK})
+if(BUILD_TESTING)
+
+  # Register the unittest subclass in the main script as a ctest.
+  # Note that the test will also be available at runtime.
+  slicer_add_python_unittest(SCRIPT ${MODULE_NAME}.py)
+
+  # Additional build-time testing
+  add_subdirectory(Testing)
+endif()

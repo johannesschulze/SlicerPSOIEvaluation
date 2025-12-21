@@ -46,7 +46,7 @@ class BSSOPSIWorkflowModule(ScriptedLoadableModule):
 		ScriptedLoadableModule.__init__(self, parent)
 		self.parent.title = _("BSSOPSIWorkflowModule")  # TODO: make this more human readable by adding spaces
 		# TODO: set categories (folders where the module shows up in the module selector)
-		self.parent.categories = [translate("qSlicerAbstractCoreModule", "Ulm")]
+		self.parent.categories = [translate("qSlicerAbstractCoreModule", "PSOI Evaluation")]
 		self.parent.dependencies = ['SegmentStatistics','ModelRegistration']  # TODO: add here list of module names that this module requires
 		self.parent.contributors = ["Johannes Schulze (Bundeswehrkrankenhaus Ulm)"]  # TODO: replace with "Firstname Lastname (Organization)"
 		# TODO: update with short description of the module and a link to online module documentation

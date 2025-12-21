@@ -10,6 +10,7 @@ import vtk
 import SegmentStatistics
 import qt
 import csv
+import sys
 
 from slicer.i18n import tr as _
 from slicer.i18n import translate
@@ -56,7 +57,7 @@ class LeFortPSIWorkflowModule(ScriptedLoadableModule):
 		ScriptedLoadableModule.__init__(self, parent)
 		self.parent.title = _("LeFortPSIWorkflowModule")  # TODO: make this more human readable by adding spaces
 		# TODO: set categories (folders where the module shows up in the module selector)
-		self.parent.categories = [translate("qSlicerAbstractCoreModule", "Ulm")]
+		self.parent.categories = [translate("qSlicerAbstractCoreModule", "PSOI Evaluation")]
 		self.parent.dependencies = ['SegmentStatistics','ModelRegistration'] 
 		self.parent.contributors = ["Johannes Schulze (Bundeswehrkrankenhaus Ulm)"]
 		self.parent.helpText = _("""
@@ -121,11 +122,11 @@ This file was originally developed by Johannes Schulze (Bundeswehrkrankenhaus Ul
 
 		slicer.app.installEventFilter(slicer.app.style())
 		slicer.app.setPalette(slicer.app.style().standardPalette())
+
+
 #
 # LeFortPSIWorkflowModuleParameterNode
 #
-
-
 @parameterNodeWrapper
 class LeFortPSIWorkflowModuleParameterNode:
 	"""
@@ -148,8 +149,6 @@ class LeFortPSIWorkflowModuleParameterNode:
 #
 # LeFortPSIWorkflowModuleWidget
 #
-
-
 class LeFortPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 	"""Uses ScriptedLoadableModuleWidget base class, available at:
 	https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
@@ -507,11 +506,14 @@ class LeFortPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 		
 			# nachdem alle Parameter gesetzt wurde kann es ausgeführt werden
 			slicer.modules.dynamicmodeler.logic().RunDynamicModelerTool(modelerNode)
+
+			modelNode.GetDisplayNode().SetVisibility(False)
 		
 		# Wenn alles abgetrennt ist können die Ebenen und die Markups ausgeblendet werden
 		slicer.util.getNode("landmarks").GetDisplayNode().SetVisibility(0)
 		resectionPlaneNode.GetDisplayNode().SetVisibility(0)
 		resectionPlaneObliqueNode.GetDisplayNode().SetVisibility(0)
+		self.setDefault3dView(1)
 
 	def alignMaxillaModels(self):
 		registeredModel = self.registerSourceModelToTargetModel("max preop cropped", "max planned cropped", "registration preop-planned", "max preop cropped registered to planned")
@@ -713,42 +715,83 @@ class LeFortPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 	def prepareModels(self):
 		self.setDefault3dView(1)
 
-		patterns = {
-			'*_Max_pre-op'		:	'max preop',
-			'*_Max_post-op'		:	'max postop',
-			'*_Max_planned'		:	'max planned',
-			'*_Lefort_planned'  :	'lefortpsi planned',
-			'*_Lefort_post-op'  :	'lefortpsi postop'
+		modelPatterns = {
+			'max planned' : [
+				'*_Max_planned*',
+				'*_Skull_planned*',
+				'*_skull_planned*',
+				'*_Skull_Planned*',
+				'*_Maxilla_Planned*'
+			],
+			'max preop' : [
+				'*_Max_pre-op*',
+				'*_Skull_pre-op*',
+				'*_skull_pre-op*',
+				'*_Skull_Pre-op*',
+				'*_Maxilla_PreOp*'
+			],
+			'max postop' : [
+				'*_Max_post-op*',
+				'*_skull_post-op*',
+				'*_Skull_post-op*',
+				'*_Skull_Post-op*',
+				'*_Maxilla_PostOp*'
+			],
+			'lefortpsi planned' : [
+				'*_Lefort_planned*',
+				'*_LeFort_planned*',
+				'*_Lefort_I1_planned*',
+				'*_Lefort_I1_Planned*',
+				'*_Lefort_Planned*',
+				'*_Maxilla_Implant_Planned*',
+				'*_Skull_Implant_planned*'
+			],
+			'lefortpsi postop' : [
+				'*_Lefort_post-op*',
+				'*_LeFort_post-op*',
+				'*_Lefort_I1_post-op*',
+				'*_Maxilla_Implant_Post-op*',
+				'*_Skull_Implant_post-op*'
+				'*_Screws+Lefort_PostOp*'
+			]
 		}
+
+		
 
 		shNode = slicer.mrmlScene.GetSubjectHierarchyNode()
 		folderNodeID = shNode.CreateFolderItem(shNode.GetSceneItemID(), "Models")
 
-		for pattern, newName in patterns.items():
+		for newName, patterns in modelPatterns.items():
+			found = False
+
 			try:
-				
-				node = slicer.util.getNode(pattern)		# Node des Modells anhand des Patterns suchen
-				oldName = node.GetName()				# dann den alten Namen auslesen...
-				node.SetName(newName)					# ... und den neuen Namen setzen
-
-				# dann noch die Farbe des Modells anhand der Color-Map setzen
+				node = slicer.util.getNode(newName)	# Node des Modells mit dem korreten Namen suchen 
+				found = True
 				node.GetDisplayNode().SetColor(COLOR_MAP_MAXILLA[newName])
-
-				# und das Modell in den Models-Order packen
 				shNode.CreateItem(folderNodeID, node)
-
-				print(f"Modell {oldName} umbenannt in {newName}")
+				print(f"Modell {newName} existiert bereits. Farbe festgelegt und in Models-Ordner verschoben")
 			except Exception as e:
-				try:
-					node = slicer.util.getNode(newName)	# Node des Modells mit dem korreten Namen suchen 
+				for pattern in patterns:
+					try:
+						node = slicer.util.getNode(pattern)		# Node des Modells anhand des Patterns suchen
+						found = True
+						oldName = node.GetName()				# dann den alten Namen auslesen...
+						node.SetName(newName)					# ... und den neuen Namen setzen
 
-					# wenn es exisitert wurde wahrschienlich die Farbe auch schon gesetzt, aber sicherheitshalber
-					# trotzdem nochmal setzen, falls die Umbenennung manuell erfolgt ist
-					node.GetDisplayNode().SetColor(COLOR_MAP_MAXILLA[newName])
+						# dann noch die Farbe des Modells anhand der Color-Map setzen
+						node.GetDisplayNode().SetColor(COLOR_MAP_MAXILLA[newName])
 
-					print(f"Modell {newName} existiert bereits. Nichts mehr zu tun")
-				except Exception as e2:
-					print(f"Modell für {newName} (bzw. {pattern} nicht gefunden! Bitte überprüfe, ob die Modelle vorliegen und korrekt benannt sind!")
+						# und das Modell in den Models-Order packen
+						shNode.CreateItem(folderNodeID, node)
+
+						print(f"Modell {oldName} umbenannt in {newName} und in Ordner 'models' geschoben")
+						break
+					except Exception as e:
+						continue
+					
+			if (found != True):
+				sys.stderr.write(f"Modell für {newName} nicht gefunden. Bitte überprüfe, ob die Modelle vorliegen und korrekt benannt sind!\n")
+				continue
 
 
 	def createMarkupsForPlanes(self):
@@ -919,8 +962,12 @@ class LeFortPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 		# display model scalar
 		distanceModel.GetDisplayNode().SetVisibility(1)
 		distanceModel.GetDisplayNode().SetScalarVisibility(1)
-		distanceModel.GetDisplayNode().SetAndObserveColorNodeID("vtkMRMLPETProceduralColorNodePET-Rainbow2")
-		distanceModel.GetDisplayNode().SetActiveScalar("point to point distance signed", vtk.vtkAssignAttribute.POINT_DATA)
+		#distanceModel.GetDisplayNode().SetAndObserveColorNodeID('vtkMRMLPETProceduralColorNodePET-Rainbow2')
+		#distanceModel.GetDisplayNode().SetAndObserveColorNodeID('vtkMRMLColorTableNodeFileColdToHotRainbow.txt')
+		distanceModel.GetDisplayNode().SetAndObserveColorNodeID('vtkMRMLColorTableNodeFileMagma.txt')
+		#distanceModel.GetDisplayNode().SetAndObserveColorNodeID('vtkMRMLColorTableNodeFilePlasma.txt')
+
+		distanceModel.GetDisplayNode().SetActiveScalar("point to point distance absolute", vtk.vtkAssignAttribute.POINT_DATA)
 
 		# display color legend
 		colorLegendDisplayNode = slicer.modules.colors.logic().AddDefaultColorLegendDisplayNode(distanceModel)
