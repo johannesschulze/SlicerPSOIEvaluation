@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>702</width>
-    <height>1031</height>
+    <height>1146</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -70,7 +70,7 @@ QToolBox::tab:selected {
 }</string>
      </property>
      <property name="currentIndex">
-      <number>2</number>
+      <number>3</number>
      </property>
      <widget class="QWidget" name="pagePrepareScene">
       <property name="geometry">
@@ -78,7 +78,7 @@ QToolBox::tab:selected {
         <x>0</x>
         <y>0</y>
         <width>684</width>
-        <height>336</height>
+        <height>311</height>
        </rect>
       </property>
       <property name="completed" stdset="0">
@@ -105,7 +105,7 @@ QToolBox::tab:selected {
         </widget>
        </item>
        <item>
-        <layout class="QFormLayout" name="formLayout_2">
+        <layout class="QFormLayout" name="formLayoutPrepareScene">
          <item row="0" column="0">
           <widget class="QLabel" name="label">
            <property name="text">
@@ -168,45 +168,14 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-         <item row="2" column="1">
-          <widget class="qMRMLNodeComboBox" name="psiPlannedModelSelector" native="true">
-           <property name="toolTip">
-            <string>Pick the input to the algorithm.</string>
-           </property>
-           <property name="nodeTypes" stdset="0">
-            <stringlist notr="true">
-             <string>vtkMRMLModelNode</string>
-            </stringlist>
-           </property>
-           <property name="showChildNodeTypes" stdset="0">
-            <bool>false</bool>
-           </property>
-           <property name="addEnabled" stdset="0">
-            <bool>false</bool>
-           </property>
-           <property name="removeEnabled" stdset="0">
-            <bool>false</bool>
-           </property>
-           <property name="SlicerParameterName" stdset="0">
-            <string>psiPlannedModel</string>
-           </property>
-          </widget>
-         </item>
          <item row="2" column="0">
-          <widget class="QLabel" name="label">
-           <property name="text">
-            <string>PSI Planned:</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0">
           <widget class="QLabel" name="label_8">
            <property name="text">
             <string>Skull Planned</string>
            </property>
           </widget>
          </item>
-         <item row="3" column="1">
+         <item row="2" column="1">
           <widget class="qMRMLNodeComboBox" name="skullPlannedModelSelector" native="true">
            <property name="nodeTypes" stdset="0">
             <stringlist notr="true">
@@ -247,7 +216,7 @@ QToolBox::tab:selected {
         <x>0</x>
         <y>0</y>
         <width>684</width>
-        <height>234</height>
+        <height>251</height>
        </rect>
       </property>
       <attribute name="label">
@@ -349,7 +318,7 @@ QToolBox::tab:selected {
         <x>0</x>
         <y>0</y>
         <width>684</width>
-        <height>241</height>
+        <height>301</height>
        </rect>
       </property>
       <attribute name="label">
@@ -367,6 +336,57 @@ QToolBox::tab:selected {
         </widget>
        </item>
        <item>
+        <layout class="QFormLayout" name="formLayoutSelectPSI">
+         <property name="sizeConstraint">
+          <enum>QLayout::SizeConstraint::SetDefaultConstraint</enum>
+         </property>
+         <property name="fieldGrowthPolicy">
+          <enum>QFormLayout::FieldGrowthPolicy::FieldsStayAtSizeHint</enum>
+         </property>
+         <item row="0" column="0">
+          <widget class="QLabel" name="labelPSIPlanned">
+           <property name="styleSheet">
+            <string notr="true"/>
+           </property>
+           <property name="text">
+            <string>PSI Planned:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="qMRMLNodeComboBox" name="psiPlannedModelSelector" native="true">
+           <property name="toolTip">
+            <string>Pick the input to the algorithm.</string>
+           </property>
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLModelNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="SlicerParameterName" stdset="0">
+            <string>psiPlannedModel</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QPushButton" name="applyTransformsToPlannedModelButton">
+         <property name="text">
+          <string>3.a Align PSI to preop CT (optional)</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QPushButton" name="prepareSegmentationButton">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
@@ -375,7 +395,7 @@ QToolBox::tab:selected {
           </sizepolicy>
          </property>
          <property name="text">
-          <string>3. Segment intraop PSI</string>
+          <string>3.b Segment intraop PSI</string>
          </property>
         </widget>
        </item>
@@ -387,7 +407,7 @@ QToolBox::tab:selected {
         <x>0</x>
         <y>0</y>
         <width>684</width>
-        <height>194</height>
+        <height>251</height>
        </rect>
       </property>
       <attribute name="label">
@@ -425,7 +445,7 @@ QToolBox::tab:selected {
         <x>0</x>
         <y>0</y>
         <width>684</width>
-        <height>194</height>
+        <height>251</height>
        </rect>
       </property>
       <attribute name="label">
@@ -457,7 +477,7 @@ QToolBox::tab:selected {
         <x>0</x>
         <y>0</y>
         <width>684</width>
-        <height>194</height>
+        <height>251</height>
        </rect>
       </property>
       <attribute name="label">
@@ -556,7 +576,7 @@ QToolBox::tab:selected {
   <connection>
    <sender>OrbitaPSIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
-   <receiver>psiPlannedModelSelector</receiver>
+   <receiver>skullPlannedModelSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
     <hint type="sourcelabel">
@@ -572,7 +592,7 @@ QToolBox::tab:selected {
   <connection>
    <sender>OrbitaPSIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
-   <receiver>skullPlannedModelSelector</receiver>
+   <receiver>psiPlannedModelSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
     <hint type="sourcelabel">
