@@ -508,7 +508,7 @@ def cloneModel(nodeToClone, clonedName):
     clonedNode.SetName(clonedName)
     return clonedNode
 
-def registerSourceModelToTargetModel(sourceModel, targetModel, transformName, registeredModelName = None, clone = True, color = COLOR_REGISTERED):
+def registerSourceModelToTargetModel(sourceModel, targetModel, transformName, registeredModelName = None, clone = True, color = COLOR_REGISTERED, hardenTransform = True):
         """
         Docstring for registerSourceModelToTargetModel
         
@@ -537,7 +537,9 @@ def registerSourceModelToTargetModel(sourceModel, targetModel, transformName, re
 
         # Registrierungstransform auf das kopierte Objekt anweneden und TRansform härten (das kann man bestimmt abkürzen)
         registeredModel.SetAndObserveTransformNodeID(sourceToTargetTransform.GetID())
-        registeredModel.HardenTransform()
+
+        if (hardenTransform):
+            registeredModel.HardenTransform()
         
         registeredModel.GetDisplayNode().SetColor(color)
         registeredModel.GetDisplayNode().SetVisibility(1)

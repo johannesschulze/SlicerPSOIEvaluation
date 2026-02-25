@@ -28,7 +28,7 @@ from slicer.parameterNodeWrapper import (
     WithinRange,
 )
 
-from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode
+from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode
 
 class OrbitaPSIWorkflowModule(ScriptedLoadableModule):
     """Uses ScriptedLoadableModule base class, available at:
@@ -70,6 +70,7 @@ class OrbitaPSIWorkflowModuleParameterNode:
     postopVolume : vtkMRMLScalarVolumeNode
     psiPlannedModel : vtkMRMLModelNode
     skullPlannedModel : vtkMRMLModelNode
+    #psiPlannedName : str = "orbita_psi"
 
     rmsPlanToPreop : float
     rmsPlanToPostop : float
@@ -117,6 +118,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         # Buttons
         self.ui.prepareSceneButton.connect("clicked(bool)", self.onPrepareSceneButton)
         self.ui.performVolumeRegistrationButton.connect("clicked(bool)", self.onPerformVolumeRegistrationButton)
+        self.ui.applyTransformsToPlannedModelButton.connect("clicked(bool)", self.onApplyTransformsToPlannedModelButton)
         self.ui.prepareSegmentationButton.connect("clicked(bool)", self.onPrepareSegmentationButton)
         self.ui.alignPSIsButton.connect("clicked(bool)", self.onAlignPSIsButton)
         self.ui.calculateM2MDistanceButton.connect("clicked(bool)", self.onCalculateM2MDistanceButton)
@@ -125,12 +127,12 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self.ui.segmentPreopCTButton.connect("clicked(bool)", self.onSegmentPreopCTButton)
         self.ui.registerPlanToPreopButton.connect("clicked(bool)", self.onRegisterPlanToPreopButton)
 
+        self.ui.psiPlannedModelSelector.connect("currentNodeChanged(bool)", self.onPlannedModelSelectorChanged)
+
         self.ui.stepsToolbox.connect("currentChanged(int)", self.onStepsToolboxCurrentChanged)
 
         # Buttons for Maxilla Model handling
         #self.ui.labelImage.setPixmap(QPixmap(self.resourcePath("Images/orbita.png")))
-
-        
 
         # self.ui.markupsButton.connect("clicked(bool)", self.logic.createMarkupsForPlanes)
         # self.ui.planesButton.connect("clicked(bool)", self.logic.createResectionPlanes)
@@ -253,6 +255,11 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             slicer.util.messageBox(f"Registration completed (RMS: {self.logic.getParameterNode().rmsPlanToPreop})")
             self._nextStep()
         return
+    
+    def onApplyTransformsToPlannedModelButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
+            # Compute output
+            self.logic.applyTransformsToPlannendModel()
 
     def onPrepareSegmentationButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
@@ -278,6 +285,10 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             # Compute output
             self.logic.printPSIResults()
             slicer.util.messageBox("<b>Output complete!</b><p>You have finished this case. Don't forget so save the scene in the appropriate directory!</p>")
+
+    def onPlannedModelSelectorChanged(self) -> None:
+        node = self.ui.psiPlannedModelSelector.currentNode()
+        return
 
     def _nextStep(self) -> None:
         if (self.ui.stepsToolbox.currentIndex < (self.ui.stepsToolbox.count-1)):
@@ -319,31 +330,21 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         pn.preopVolume.SetName("preop volume")
         pn.postopVolume.SetName("postop volume")
 
-        pn.psiPlannedModel.SetName("PSI planned model")
-        pn.psiPlannedModel.GetDisplayNode().SetColor(helperfunctions.COLOR_PLANNED)
-        pn.psiPlannedModel.GetDisplayNode().SetVisibility(False)
-        helperfunctions.applyMaterialToModelNode(
-            pn.psiPlannedModel,
-            helperfunctions.MATERIAL_METAL
-        )
-
         if (pn.skullPlannedModel != None):
             pn.skullPlannedModel.SetName("Skull planned model")
             pn.skullPlannedModel.GetDisplayNode().SetColor(helperfunctions.COLOR_PLANNED)
             pn.skullPlannedModel.GetDisplayNode().SetVisibility(False)
             helperfunctions.applyMaterialToModelNode(
-                pn.psiPlannedModel,
+                pn.skullPlannedModel,
                 helperfunctions.MATERIAL_BONE
             )
         
         # display volumes in slice views
         slicer.util.setSliceViewerLayers(foreground=postopVolume, foregroundOpacity=0.5, background=preopVolume)
 
-
-
         # enable Volume rendering
-        helperfunctions.showVolumeRendering(preopVolume, preset="CT-Bone", hideSoftTissue=True, thresholds=[250,800])
-        helperfunctions.showVolumeRendering(postopVolume, preset="CT-Bone", hideSoftTissue=True, thresholds=[650, 850])
+        # helperfunctions.showVolumeRendering(preopVolume, preset="CT-Bone", hideSoftTissue=True, thresholds=[250,800])
+        # helperfunctions.showVolumeRendering(postopVolume, preset="CT-Bone", hideSoftTissue=True, thresholds=[650, 850])
 
         alignmentTransform = helperfunctions.alignNodesByCenterOfGravity(postopVolume, preopVolume)
         alignmentTransform.CreateDefaultDisplayNodes()
@@ -378,7 +379,6 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         return
     
     def recenterPlannningSTLs(self):
-        psiPlannedModel = self.getParameterNode().psiPlannedModel
         skullPlannedModel = self.getParameterNode().skullPlannedModel
         preopVolume = self.getParameterNode().preopVolume
 
@@ -395,16 +395,11 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         preopVolume.SetDisplayVisibility(True)
         slicer.util.setSliceViewerLayers(background=preopVolume)
 
-        psiPlannedModel.SetDisplayVisibility(True)
-        psiPlannedModel.GetDisplayNode().SetVisibility2D(True)
         skullPlannedModel.SetDisplayVisibility(True)
         skullPlannedModel.GetDisplayNode().SetVisibility2D(True)
 
         # center the planned skull to the preop volume
-        centeringTransform = helperfunctions.alignNodesByCenterOfGravity(skullPlannedModel, preopVolume)
-
-        # and apply the same transform to the psi model (keeping both in sync)
-        psiPlannedModel.SetAndObserveTransformNodeID(centeringTransform.GetID())
+        centeringTransform = helperfunctions.alignNodesByCenterOfGravity(skullPlannedModel, preopVolume)    
 
         # display the transform for manual correction
         centeringTransform.SetName("manual registration plan to preop")
@@ -424,7 +419,6 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # gather data
         volumeNode = self.getParameterNode().preopVolume
         skullPlannedModel = self.getParameterNode().skullPlannedModel
-        psiPlannedModel = self.getParameterNode().psiPlannedModel
 
         # remove existing nodes from the scene
         helperfunctions.removeNodesFromSceneByName([
@@ -437,7 +431,6 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         transformNodeId = skullPlannedModel.GetTransformNodeID()
         if (transformNodeId != None):
             skullPlannedModel.HardenTransform()
-            psiPlannedModel.HardenTransform()
             slicer.mrmlScene.GetNodeByID(transformNodeId).GetDisplayNode().SetEditorVisibility(False)
 
         # build the roi
@@ -510,21 +503,53 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         # apply the new transform to the planned models
         self.getParameterNode().skullPlannedModel.SetAndObserveTransformNodeID(sourceToTargetTransform.GetID())
-        self.getParameterNode().psiPlannedModel.SetAndObserveTransformNodeID(sourceToTargetTransform.GetID())
+        
         helperfunctions.centerTransformToNode(sourceToTargetTransform, preopModel)
 
         return
 
+    # applies the regisrtation transform (planned to preop) for the selected psi
+    def applyTransformsToPlannendModel(self):
+        pn = self.getParameterNode()
+        psiPlannedModel = pn.psiPlannedModel
+        psiPlannedModel.SetDisplayVisibility(True)
+
+        try:
+            registrationPlanToPreopManual = slicer.util.getNode("manual registration plan to preop")
+            psiPlannedModel.SetAndObserveTransformNodeID(registrationPlanToPreopManual.GetID())
+            psiPlannedModel.HardenTransform()
+        except Exception as e:
+            print("No manual registration from planne to preop found. Skipping.", file=sys.stderr)
+
+        try:
+            registrationPlanToPreop = slicer.util.getNode("registration plan to preop")
+            psiPlannedModel.SetAndObserveTransformNodeID(registrationPlanToPreop.GetID())
+            psiPlannedModel.HardenTransform()
+        except Exception as e:
+            print("No computed registration from planne to preop found. Skipping.", file=sys.stderr)
+
+    # prepares the scene for the segmentation of the intraoperative situation of the selected psi
     def prepareSegmentation(self):
-        preopVolume = self.getParameterNode().preopVolume
-        postopVolume = self.getParameterNode().postopVolume
-        psiPlannedModel = self.getParameterNode().psiPlannedModel
-        skullPlannedModel = self.getParameterNode().skullPlannedModel
+
+        pn = self.getParameterNode()
+
+        preopVolume = pn.preopVolume
+        postopVolume = pn.postopVolume
+        psiPlannedModel = pn.psiPlannedModel
+        skullPlannedModel = pn.skullPlannedModel
+
+        #pn.psiPlannedModel.SetName(pn.psiPlannedName)
+        pn.psiPlannedModel.GetDisplayNode().SetColor(helperfunctions.COLOR_PLANNED)
+        pn.psiPlannedModel.GetDisplayNode().SetVisibility(False)
+        helperfunctions.applyMaterialToModelNode(
+            pn.psiPlannedModel,
+            helperfunctions.MATERIAL_METAL
+        )
 
         # remove existing nodes from the scene
         helperfunctions.removeNodesFromSceneByName([
-            "PSI postop Segmentation",
-            postopVolume.GetName() + " cropped",
+            psiPlannedModel.GetName() + " postop Segmentation",
+            postopVolume.GetName() + " cropped to " + psiPlannedModel.GetName(),
             psiPlannedModel.GetName() + " Bounding Box"
         ])
 
@@ -555,7 +580,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         slicer.modules.cropvolume.logic().Apply(cropVolumeParameters)
 
         croppedCT = cropVolumeParameters.GetOutputVolumeNode()
-        croppedCT.SetName(postopVolume.GetName() + " cropped")
+        croppedCT.SetName(postopVolume.GetName() + " cropped to " + psiPlannedModel.GetName())
 
         slicer.util.setSliceViewerLayers(background=croppedCT, foreground=None)
         slicer.util.resetSliceViews()
@@ -564,12 +589,12 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         # create Segmentations
         segmentationNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
-        segmentationNode.SetName("PSI postop Segmentation")
+        segmentationNode.SetName(psiPlannedModel.GetName() + " postop Segmentation")
         segmentation = segmentationNode.GetSegmentation()
         segmentId = segmentation.AddEmptySegment()
         segment = segmentation.GetSegment(segmentId)
         segment.SetColor(helperfunctions.COLOR_POSTOP)
-        segment.SetName("PSI postop Segment")
+        segment.SetName(psiPlannedModel.GetName() + " postop Segment")
      
         # switch to SegmentEditor
         slicer.util.selectModule("SegmentEditor")
@@ -601,41 +626,56 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         # remove existing nodes from the scene
         helperfunctions.removeNodesFromSceneByName([
-            "PSI postop model",
+            f"{psiPlannedModel.GetName()} postop model",
             f"{psiPlannedModel.GetName()} registered to postop"
         ])
 
         # convert Segmentation to model
-        segmentationNode = slicer.util.getNode("PSI postop Segmentation")
+        segmentationNode = slicer.util.getNode(f"{psiPlannedModel.GetName()} postop Segmentation")
         segmentationNode.SetDisplayVisibility(False)
         slicer.modules.segmentations.logic().ExportVisibleSegmentsToModels(segmentationNode, 0)
-        psiPostopModel = slicer.util.getNode("PSI postop Segment")
-        psiPostopModel.SetName("PSI postop model")
+        psiPostopModel = slicer.util.getNode(f"{psiPlannedModel.GetName()} postop Segment")
+        psiPostopModel.SetName(f"{psiPlannedModel.GetName()} postop model")
         psiPostopModel.GetDisplayNode().SetColor(np.array(helperfunctions.COLOR_POSTOP)*0.7)
 
         # clone planned model and register to postop position
         registeredModel, rms = helperfunctions.registerSourceModelToTargetModel(
             psiPlannedModel,
             psiPostopModel,
-            "registration psi planned to postop",
-            f"{psiPlannedModel.GetName()} registered to postop")
+            f"registration {psiPlannedModel.GetName()} to postop",
+            f"{psiPlannedModel.GetName()} registered to postop",
+            hardenTransform=False)
+        
         registeredModel.GetDisplayNode().SetColor(helperfunctions.COLOR_POSTOP)
         helperfunctions.applyMaterialToModelNode(registeredModel, helperfunctions.MATERIAL_BONE)
-        self.getParameterNode().rmsPlanToPreop = rms
+        self.getParameterNode().rmsPlanToPostop = rms
+
+        alignmentTransform = slicer.util.getNode(f"registration {psiPlannedModel.GetName()} to postop")
+        alignmentTransform.CreateDefaultDisplayNodes()
+        alignmentTransform.GetDisplayNode().SetEditorVisibility(True)
+        alignmentTransform.GetDisplayNode().SetRotationHandleComponentVisibility3D([True, True, True, True])
+        helperfunctions.centerTransformToNode(alignmentTransform, registeredModel)
 
 
     def calculatePSIModelToModelDistance(self):
+        psiPlannedModel = self.getParameterNode().psiPlannedModel
+        psiPlannedModelRegisteredToPostop = slicer.util.getNode(f"{psiPlannedModel.GetName()} registered to postop")
+
+        # before calculating the distances we have to harden the transform
+        psiPlannedModelRegisteredToPostop.HardenTransform()
+
         # remove existing nodes from the scene
         helperfunctions.removeNodesFromSceneByName([
-            "PSI distance model planned postop"
+            f"{psiPlannedModel.GetName()} distance model planned postop"
         ])
 
-        slicer.util.getNode("PSI postop model").SetDisplayVisibility(False)
+        slicer.util.getNode(f"{psiPlannedModel.GetName()} postop model").SetDisplayVisibility(False)
+        slicer.util.getNode(f"registration {psiPlannedModel.GetName()} to postop").GetDisplayNode().SetEditorVisibility(False)
 
         distanceNode = helperfunctions.computeModelToModelDistancePointByPoint(
-            slicer.util.getNode("PSI planned model"),
-            slicer.util.getNode("PSI planned model registered to postop"),
-            "PSI distance model planned postop"
+            psiPlannedModel,
+            psiPlannedModelRegisteredToPostop,
+            f"{psiPlannedModel.GetName()} distance model planned postop"
         )
 
         helperfunctions.hideAllDisplayNodes()
@@ -655,10 +695,10 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         ])
 
         return self.printResults(
-            'orbita_psi',
+            self.getParameterNode().psiPlannedModel.GetName(),
             self.getParameterNode().psiPlannedModel,
             slicer.util.getNode(f'{psiPlannedModel.GetName()} registered to postop'),
-            slicer.util.getNode('PSI distance model planned postop'),
+            slicer.util.getNode( f"{psiPlannedModel.GetName()} distance model planned postop"),
             self.getParameterNode().psiPlannedModel
         )
 
@@ -681,6 +721,9 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     # generic method for outputting the results (Model-To-Model-Distance, Hausdorf-Distance, Dice-Coefficient),
     # Rotation and Location
     def printResults(self, prefix, nodePlanned, nodePostop, nodeDistance, nodeForFilename):
+        # remove whitespace from prefix
+        prefix = prefix.replace(" ","_")
+
         # remove existing nodes from the scene
         helperfunctions.removeNodesFromSceneByName([
             nodePlanned.GetName() + " segmentation",
@@ -705,7 +748,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         resultsTableRow[f'{prefix}_hausdorff_max_planned_postop'] = diceAndHausdorff['maxHausdorffDistance']
             
         # calculate angle bewteen planned and postop position
-        transformNode = slicer.util.getNode("registration psi planned to postop")
+        transformNode = slicer.util.getNode(f"registration {nodePlanned.GetName()} to postop")
         rotMat = slicer.util.arrayFromTransformMatrix(transformNode)
         rotation = scipy.spatial.transform.Rotation.from_matrix(rotMat[:3, :3])
         euler_angles_xyz = rotation.as_euler("xyz", degrees=True)
