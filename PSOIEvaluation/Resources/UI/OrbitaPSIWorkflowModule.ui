@@ -463,6 +463,72 @@ QToolBox::tab:selected {
         </widget>
        </item>
        <item>
+        <layout class="QFormLayout" name="formLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="label_9">
+           <property name="text">
+            <string>PSI planned</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="qMRMLNodeComboBox" name="psiPlannedModelSelectorCalculation" native="true">
+           <property name="toolTip">
+            <string>Model Node of the planned PSI</string>
+           </property>
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLModelNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="SlicerParameterName" stdset="0">
+            <string>psiPlannedModel</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="label_10">
+           <property name="text">
+            <string>PSI postop</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="qMRMLNodeComboBox" name="psiPostopModelSelectorCalculation" native="true">
+           <property name="toolTip">
+            <string>Model Node of the postop PSI</string>
+           </property>
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLModelNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="SlicerParameterName" stdset="0">
+            <string>psiPlannedModel</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
         <widget class="QPushButton" name="calculateM2MDistanceButton">
          <property name="text">
           <string>5. Calculate Comparison</string>
@@ -493,6 +559,103 @@ QToolBox::tab:selected {
           <bool>true</bool>
          </property>
         </widget>
+       </item>
+       <item>
+        <layout class="QFormLayout" name="formLayout_2">
+         <item row="0" column="0">
+          <widget class="QLabel" name="label_11">
+           <property name="text">
+            <string>PSI planned</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="qMRMLNodeComboBox" name="psiPlannedModelSelectorOutput" native="true">
+           <property name="toolTip">
+            <string>Model Node of the planned PSI</string>
+           </property>
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLModelNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="SlicerParameterName" stdset="0">
+            <string>psiPlannedModel</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="label_12">
+           <property name="text">
+            <string>PSI postop</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="qMRMLNodeComboBox" name="psiPostopModelSelectorOutput" native="true">
+           <property name="toolTip">
+            <string>Model Node of the postoperative PSI</string>
+           </property>
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLModelNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="SlicerParameterName" stdset="0">
+            <string>psiPostopModel</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="label_13">
+           <property name="text">
+            <string>Distance</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="qMRMLNodeComboBox" name="psiDistanceModelSelectorOutput" native="true">
+           <property name="toolTip">
+            <string>Model Node of the comparative distance between planned and postop position</string>
+           </property>
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLModelNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="SlicerParameterName" stdset="0">
+            <string>psiDistanceModel</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <widget class="QPushButton" name="printPSIResultsButton">
@@ -593,6 +756,86 @@ QToolBox::tab:selected {
    <sender>OrbitaPSIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiPlannedModelSelector</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>82</x>
+     <y>135</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>220</x>
+     <y>161</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitaPSIWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>psiPlannedModelSelectorCalculation</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>82</x>
+     <y>135</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>220</x>
+     <y>161</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitaPSIWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>psiPostopModelSelectorCalculation</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>82</x>
+     <y>135</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>220</x>
+     <y>161</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitaPSIWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>psiPlannedModelSelectorOutput</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>82</x>
+     <y>135</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>220</x>
+     <y>161</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitaPSIWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>psiPostopModelSelectorOutput</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>82</x>
+     <y>135</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>220</x>
+     <y>161</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitaPSIWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>psiDistanceModelSelectorOutput</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
     <hint type="sourcelabel">

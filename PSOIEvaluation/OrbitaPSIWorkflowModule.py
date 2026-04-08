@@ -28,7 +28,7 @@ from slicer.parameterNodeWrapper import (
     WithinRange,
 )
 
-from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode
+from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode, vtkMRMLNode 
 
 class OrbitaPSIWorkflowModule(ScriptedLoadableModule):
     """Uses ScriptedLoadableModule base class, available at:
@@ -69,6 +69,8 @@ class OrbitaPSIWorkflowModuleParameterNode:
     preopVolume : vtkMRMLScalarVolumeNode
     postopVolume : vtkMRMLScalarVolumeNode
     psiPlannedModel : vtkMRMLModelNode
+    psiPostopModel : vtkMRMLModelNode
+    psiDistanceModel : vtkMRMLModelNode
     skullPlannedModel : vtkMRMLModelNode
     #psiPlannedName : str = "orbita_psi"
 
@@ -127,7 +129,12 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self.ui.segmentPreopCTButton.connect("clicked(bool)", self.onSegmentPreopCTButton)
         self.ui.registerPlanToPreopButton.connect("clicked(bool)", self.onRegisterPlanToPreopButton)
 
-        self.ui.psiPlannedModelSelector.connect("currentNodeChanged(bool)", self.onPlannedModelSelectorChanged)
+		# change events for Node selectors
+        self.ui.psiPlannedModelSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onPlannedModelSelectorChanged)
+        self.ui.psiPlannedModelSelectorCalculation.connect("currentNodeChanged(vtkMRMLNode*)", self.onPlannedModelSelectorChanged)
+        self.ui.psiPlannedModelSelectorOutput.connect("currentNodeChanged(vtkMRMLNode*)", self.onPlannedModelSelectorChanged)
+        self.ui.psiPostopModelSelectorCalculation.connect("currentNodeChanged(vtkMRMLNode*)", self.onPostopModelSelectorChanged)
+        self.ui.psiPostopModelSelectorOutput.connect("currentNodeChanged(vtkMRMLNode*)", self.onPostopModelSelectorChanged)
 
         self.ui.stepsToolbox.connect("currentChanged(int)", self.onStepsToolboxCurrentChanged)
 
@@ -203,7 +210,9 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         if self._parameterNode:
             self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
             self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+            
         self._parameterNode = inputParameterNode
+        
         if self._parameterNode:
             # Note: in the .ui file, a Qt dynamic property called "SlicerParameterName" is set on each
             # ui element that needs connection.
@@ -286,8 +295,25 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             self.logic.printPSIResults()
             slicer.util.messageBox("<b>Output complete!</b><p>You have finished this case. Don't forget so save the scene in the appropriate directory!</p>")
 
-    def onPlannedModelSelectorChanged(self) -> None:
-        node = self.ui.psiPlannedModelSelector.currentNode()
+    def onPlannedModelSelectorChanged(self, node) -> None:
+        if (node == None):
+            return
+        
+        print(node.GetName())
+        self.ui.psiPlannedModelSelector.setCurrentNodeID(node.GetID())
+        self.ui.psiPlannedModelSelectorCalculation.setCurrentNodeID(node.GetID())
+        self.ui.psiPlannedModelSelectorOutput.setCurrentNodeID(node.GetID())
+
+        return
+       
+    def onPostopModelSelectorChanged(self, node) -> None:
+        if (node == None):
+            return
+        
+        print(node.GetName())
+        self.ui.psiPostopModelSelectorCalculation.setCurrentNodeID(node.GetID())
+        self.ui.psiPostopModelSelectorOutput.setCurrentNodeID(node.GetID())
+       
         return
 
     def _nextStep(self) -> None:
@@ -648,7 +674,9 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         
         registeredModel.GetDisplayNode().SetColor(helperfunctions.COLOR_POSTOP)
         helperfunctions.applyMaterialToModelNode(registeredModel, helperfunctions.MATERIAL_BONE)
+        
         self.getParameterNode().rmsPlanToPostop = rms
+        self.getParameterNode().psiPostopModel = registeredModel
 
         alignmentTransform = slicer.util.getNode(f"registration {psiPlannedModel.GetName()} to postop")
         alignmentTransform.CreateDefaultDisplayNodes()
@@ -659,8 +687,8 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
     def calculatePSIModelToModelDistance(self):
         psiPlannedModel = self.getParameterNode().psiPlannedModel
-        psiPlannedModelRegisteredToPostop = slicer.util.getNode(f"{psiPlannedModel.GetName()} registered to postop")
-
+        psiPlannedModelRegisteredToPostop = self.getParameterNode().psiPostopModel
+                
         # before calculating the distances we have to harden the transform
         psiPlannedModelRegisteredToPostop.HardenTransform()
 
@@ -669,14 +697,20 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             f"{psiPlannedModel.GetName()} distance model planned postop"
         ])
 
-        slicer.util.getNode(f"{psiPlannedModel.GetName()} postop model").SetDisplayVisibility(False)
-        slicer.util.getNode(f"registration {psiPlannedModel.GetName()} to postop").GetDisplayNode().SetEditorVisibility(False)
+		# try to hide models that are not needed
+        try:
+            slicer.util.getNode(f"{psiPlannedModel.GetName()} postop model").SetDisplayVisibility(False)
+            slicer.util.getNode(f"registration {psiPlannedModel.GetName()} to postop").GetDisplayNode().SetEditorVisibility(False)
+        except Exception as e:
+            print("Error while hiding unneeded nodes.", file=sys.stderr)    
 
         distanceNode = helperfunctions.computeModelToModelDistancePointByPoint(
             psiPlannedModel,
             psiPlannedModelRegisteredToPostop,
             f"{psiPlannedModel.GetName()} distance model planned postop"
         )
+        
+        self.getParameterNode().psiDistanceModel = distanceNode
 
         helperfunctions.hideAllDisplayNodes()
         distanceNode.SetDisplayVisibility(True)
@@ -685,21 +719,23 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     
     def printPSIResults(self):
         psiPlannedModel = self.getParameterNode().psiPlannedModel
+        psiPostopModel = self.getParameterNode().psiPostopModel
+        psiDistanceModel = self.getParameterNode().psiDistanceModel
 
         # remove existing nodes from the scene
         helperfunctions.removeNodesFromSceneByName([
             psiPlannedModel.GetName() + " segmentation",
-            psiPlannedModel.GetName() + " registered to postop segmentation",
+            psiPostopModel.GetName() + " segmentation",
             psiPlannedModel.GetName() + " OBB",
-            psiPlannedModel.GetName() + " registered to postop OBB",
+            psiPostopModel.GetName() + " OBB",
         ])
 
         return self.printResults(
-            self.getParameterNode().psiPlannedModel.GetName(),
-            self.getParameterNode().psiPlannedModel,
-            slicer.util.getNode(f'{psiPlannedModel.GetName()} registered to postop'),
-            slicer.util.getNode( f"{psiPlannedModel.GetName()} distance model planned postop"),
-            self.getParameterNode().psiPlannedModel
+            psiPlannedModel.GetName(),
+            psiPlannedModel,
+            psiPostopModel,
+            psiDistanceModel,
+            psiPlannedModel
         )
 
     def printAllResults(self):
