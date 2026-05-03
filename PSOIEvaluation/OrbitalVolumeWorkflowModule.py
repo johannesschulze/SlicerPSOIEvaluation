@@ -31,7 +31,7 @@ from slicer.parameterNodeWrapper import parameterNodeWrapper
 from slicer.util import VTKObservationMixin
 from slicer import (
     vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLSegmentationNode,
-    vtkMRMLMarkupsFiducialNode,
+    vtkMRMLMarkupsFiducialNode, vtkMRMLLinearTransformNode,
 )
 
 
@@ -95,9 +95,14 @@ class OrbitalVolumeWorkflowModuleParameterNode:
     posteriorBoostRight: float = 1.5
     showSeedLeft:           bool  = True
     showSeedRight:          bool  = True
-    useContralateralLeft:   bool  = False
-    useContralateralRight:  bool  = False
-    posteriorMarkupLeft:    vtkMRMLMarkupsFiducialNode
+    # 0 = manual, 1 = mirror contralateral, 2 = model-based
+    seedModeLeft:            int   = 0
+    seedModeRight:           int   = 0
+    modelSeedNodeLeft:       vtkMRMLSegmentationNode
+    modelSeedNodeRight:      vtkMRMLSegmentationNode
+    modelSeedTransformLeft:  vtkMRMLLinearTransformNode
+    modelSeedTransformRight: vtkMRMLLinearTransformNode
+    posteriorMarkupLeft:     vtkMRMLMarkupsFiducialNode
     posteriorMarkupRight:   vtkMRMLMarkupsFiducialNode
     removeSatellitesLeft:   bool  = True
     removeSatellitesRight:  bool  = True
@@ -185,6 +190,12 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.removeSatellitesCheckBox.connect(
             "toggled(bool)", lambda checked: self.ui.satelliteDiamSpinBox.setEnabled(checked)
         )
+        for rb in [self.ui.rbSeedManual, self.ui.rbSeedContralateral, self.ui.rbSeedModelBased]:
+            rb.connect("toggled(bool)", lambda checked: checked and self.onSeedModeChanged())
+        self.ui.modelSeedSelector.connect(
+            "currentNodeChanged(vtkMRMLNode*)", self.onModelSeedChanged
+        )
+        self.ui.positionModelButton.connect("clicked(bool)", self.onPositionModelButton)
 
         # Seiten-Buttons
         self.ui.btnSideLeft.connect("clicked()",  lambda: self.onSideChanged(True))
@@ -411,8 +422,14 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self._parameterNode.__setattr__(f"stoppingValue{s}",self.ui.stoppingValueSpinBox.value)
         self._parameterNode.__setattr__(f"speedSigma{s}",   self.ui.speedSigmaSpinBox.value)
         self._parameterNode.__setattr__(f"posteriorBoost{s}",self.ui.posteriorBoostSpinBox.value)
-        self._parameterNode.__setattr__(f"showSeed{s}",          self.ui.showSeedCheckBox.isChecked())
-        self._parameterNode.__setattr__(f"useContralateral{s}",  self.ui.useContralateralCheckBox.isChecked())
+        self._parameterNode.__setattr__(f"showSeed{s}", self.ui.showSeedCheckBox.isChecked())
+        mode = (1 if self.ui.rbSeedContralateral.isChecked()
+                else 2 if self.ui.rbSeedModelBased.isChecked() else 0)
+        self._parameterNode.__setattr__(f"seedMode{s}", mode)
+        if isLeft:
+            self._parameterNode.modelSeedNodeLeft  = self.ui.modelSeedSelector.currentNode()
+        else:
+            self._parameterNode.modelSeedNodeRight = self.ui.modelSeedSelector.currentNode()
         self._parameterNode.__setattr__(f"removeSatellites{s}", self.ui.removeSatellitesCheckBox.isChecked())
         self._parameterNode.__setattr__(f"satelliteDiam{s}",    self.ui.satelliteDiamSpinBox.value)
 
@@ -431,12 +448,30 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.stoppingValueSpinBox.setValue(self._parameterNode.__getattribute__(f"stoppingValue{s}"))
         self.ui.speedSigmaSpinBox.setValue(   self._parameterNode.__getattribute__(f"speedSigma{s}"))
         self.ui.posteriorBoostSpinBox.setValue(self._parameterNode.__getattribute__(f"posteriorBoost{s}"))
-        self.ui.showSeedCheckBox.setChecked(         self._parameterNode.__getattribute__(f"showSeed{s}"))
-        # Checkbox nur aktivierbar wenn Gegenseite segmentiert ist
+        self.ui.showSeedCheckBox.setChecked(self._parameterNode.__getattribute__(f"showSeed{s}"))
+        # Restore seed-mode radio buttons without triggering onSeedModeChanged
+        mode = self._parameterNode.__getattribute__(f"seedMode{s}")
+        for rb in [self.ui.rbSeedManual, self.ui.rbSeedContralateral, self.ui.rbSeedModelBased]:
+            rb.blockSignals(True)
+        self.ui.rbSeedManual.setChecked(mode == 0)
+        self.ui.rbSeedContralateral.setChecked(mode == 1)
+        self.ui.rbSeedModelBased.setChecked(mode == 2)
+        for rb in [self.ui.rbSeedManual, self.ui.rbSeedContralateral, self.ui.rbSeedModelBased]:
+            rb.blockSignals(False)
+        # Contralateral option only available when the other side is already segmented
         contra_node = (self._parameterNode.segmentationNodeRight
                        if isLeft else self._parameterNode.segmentationNodeLeft)
-        self.ui.useContralateralCheckBox.setEnabled(contra_node is not None)
-        self.ui.useContralateralCheckBox.setChecked(self._parameterNode.__getattribute__(f"useContralateral{s}"))
+        self.ui.rbSeedContralateral.setEnabled(contra_node is not None)
+        # Show/hide model-template row
+        is_model = (mode == 2)
+        self.ui.labelModelSeed.setVisible(is_model)
+        self.ui.modelSeedWidget.setVisible(is_model)
+        # Restore model seed selector
+        model_seed = getattr(self._parameterNode, f"modelSeedNode{s}", None)
+        self.ui.modelSeedSelector.blockSignals(True)
+        self.ui.modelSeedSelector.setCurrentNode(model_seed)
+        self.ui.modelSeedSelector.blockSignals(False)
+        self.ui.positionModelButton.setEnabled(model_seed is not None)
         remove_sat = self._parameterNode.__getattribute__(f"removeSatellites{s}")
         self.ui.removeSatellitesCheckBox.setChecked(remove_sat)
         self.ui.satelliteDiamSpinBox.setValue(       self._parameterNode.__getattribute__(f"satelliteDiam{s}"))
@@ -450,7 +485,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         dst = "Right" if fromLeft else "Left"
         for param in ["huMin", "huMax", "autoSeed", "seedOffset", "orbitalDepth",
                       "radiusMargin", "stoppingValue", "speedSigma", "posteriorBoost",
-                      "showSeed", "useContralateral", "removeSatellites", "satelliteDiam"]:
+                      "showSeed", "seedMode", "removeSatellites", "satelliteDiam"]:
             val = self._parameterNode.__getattribute__(f"{param}{src}")
             self._parameterNode.__setattr__(f"{param}{dst}", val)
 
@@ -600,6 +635,82 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
     def onAutoSeedToggled(self, checked: bool) -> None:
         self.ui.seedOffsetSpinBox.setEnabled(not checked)
 
+    def onSeedModeChanged(self) -> None:
+        is_contra = self.ui.rbSeedContralateral.isChecked()
+        is_model  = self.ui.rbSeedModelBased.isChecked()
+        # For region-seed modes the FM starts from a large pre-computed volume,
+        # so a much lower stopping value is sufficient.
+        self.ui.stoppingValueSpinBox.setValue(15.0 if (is_contra or is_model) else 25.0)
+        # Show / hide the model-template row
+        self.ui.labelModelSeed.setVisible(is_model)
+        self.ui.modelSeedWidget.setVisible(is_model)
+
+    def onModelSeedChanged(self, node) -> None:
+        self.ui.positionModelButton.setEnabled(node is not None)
+        if self._parameterNode is None:
+            return
+        isLeft = self._parameterNode.sideIsLeft
+        if isLeft:
+            self._parameterNode.modelSeedNodeLeft  = node
+        else:
+            self._parameterNode.modelSeedNodeRight = node
+
+    def onPositionModelButton(self) -> None:
+        if self._parameterNode is None:
+            return
+        isLeft      = self._parameterNode.sideIsLeft
+        seg_node    = self.ui.modelSeedSelector.currentNode()
+        volume_node = self.ui.ctVolumeSelector.currentNode()
+        if seg_node is None:
+            slicer.util.warningDisplay(_("Please select a template segmentation first."))
+            return
+
+        tf_attr = "modelSeedTransformLeft" if isLeft else "modelSeedTransformRight"
+        existing_tf = getattr(self._parameterNode, tf_attr, None)
+
+        if existing_tf is not None and slicer.mrmlScene.IsNodePresent(existing_tf):
+            transform_node = existing_tf
+        else:
+            side_suffix = "L" if isLeft else "R"
+            transform_node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLLinearTransformNode", f"ModelSeedTransform_{side_suffix}"
+            )
+            transform_node.CreateDefaultDisplayNodes()
+            setattr(self._parameterNode, tf_attr, transform_node)
+
+        # Place the transform's origin at the orbital rim centroid (user sees handles there)
+        plane = (self._parameterNode.planeModelLeft if isLeft
+                 else self._parameterNode.planeModelRight)
+        if plane is not None:
+            centroid, _ = self.logic._getPlaneFromModel(plane)
+        elif volume_node is not None:
+            bounds = [0.0] * 6
+            volume_node.GetRASBounds(bounds)
+            centroid = np.array([(bounds[0]+bounds[1])/2,
+                                  (bounds[2]+bounds[3])/2,
+                                  (bounds[4]+bounds[5])/2])
+        else:
+            centroid = np.zeros(3)
+
+        mat = vtk.vtkMatrix4x4()
+        mat.Identity()
+        mat.SetElement(0, 3, float(centroid[0]))
+        mat.SetElement(1, 3, float(centroid[1]))
+        mat.SetElement(2, 3, float(centroid[2]))
+        transform_node.SetMatrixTransformToParent(mat)
+
+        # Apply the transform to the template – user can now drag it into position
+        seg_node.SetAndObserveTransformNodeID(transform_node.GetID())
+
+        # Show interaction handles (translation + rotation; no scaling needed)
+        disp = transform_node.GetDisplayNode()
+        disp.SetEditorVisibility(True)
+        disp.SetEditorTranslationEnabled(True)
+        disp.SetEditorRotationEnabled(True)
+        disp.SetEditorScalingEnabled(False)
+
+        slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
+
     def onCreateSurfaceButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Error creating the orbital plane."), waitCursor=True):
             curve_node = self.ui.curveSelector.currentNode()
@@ -660,24 +771,37 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             existing_seed = (self._parameterNode.seedNodeLeft
                              if isLeft else self._parameterNode.seedNodeRight)
 
-            # Gegenseiten-Segmentierung als gespiegelten Seed verwenden
-            use_contra = self.ui.useContralateralCheckBox.isChecked()
+            # --- Seed-Modus bestimmen ---
+            seed_mode = (1 if self.ui.rbSeedContralateral.isChecked()
+                         else 2 if self.ui.rbSeedModelBased.isChecked() else 0)
+
+            # Modus 1: Gegenseite spiegeln
             contra_seg_node = None
             contra_seg_id   = None
-            if use_contra:
+            if seed_mode == 1:
                 contra_node = (self._parameterNode.segmentationNodeRight
                                if isLeft else self._parameterNode.segmentationNodeLeft)
-                contra_side = False if isLeft else True
+                contra_side = not isLeft
                 if contra_node is not None:
                     contra_seg_node = contra_node
                     contra_seg_id   = self._segIds.get(contra_side)
-                    # Fallback: ID aus dem Segment-Namen suchen
                     if contra_seg_id is None:
                         seg = contra_node.GetSegmentation()
                         for i in range(seg.GetNumberOfSegments()):
                             if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
                                 contra_seg_id = seg.GetNthSegmentID(i)
                                 break
+
+            # Modus 2: Modell-basierter Seed
+            model_seed_node = None
+            model_seed_id   = None
+            if seed_mode == 2:
+                model_seed_node = (self._parameterNode.modelSeedNodeLeft if isLeft
+                                   else self._parameterNode.modelSeedNodeRight)
+                if model_seed_node is not None:
+                    seg = model_seed_node.GetSegmentation()
+                    if seg.GetNumberOfSegments() > 0:
+                        model_seed_id = seg.GetNthSegmentID(0)
 
             result = self.logic.segmentIntraorbitalVolume(
                 volume_node=volume_node,
@@ -695,6 +819,8 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 existing_seed_node=existing_seed,
                 contralateral_seg_node=contra_seg_node,
                 contralateral_seg_id=contra_seg_id,
+                model_seed_node=model_seed_node,
+                model_seed_id=model_seed_id,
                 remove_satellites=self.ui.removeSatellitesCheckBox.isChecked(),
                 min_satellite_diameter_mm=self.ui.satelliteDiamSpinBox.value,
             )
@@ -1004,6 +1130,8 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         existing_seed_node=None,
         contralateral_seg_node=None,
         contralateral_seg_id=None,
+        model_seed_node=None,
+        model_seed_id=None,
         remove_satellites: bool = True,
         min_satellite_diameter_mm: float = 3.0,
     ) -> dict:
@@ -1084,6 +1212,8 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             posterior_boost=posterior_boost,
             contralateral_seg_node=contralateral_seg_node,
             contralateral_seg_id=contralateral_seg_id,
+            model_seed_node=model_seed_node,
+            model_seed_id=model_seed_id,
         )
 
         print("  Smoothing: Closing (3 mm) ...")
@@ -1352,6 +1482,8 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         posterior_boost: float = 1.5,
         contralateral_seg_node=None,
         contralateral_seg_id=None,
+        model_seed_node=None,
+        model_seed_id=None,
     ):
         """Segments the intraorbital volume via Fast Marching on a HU-derived speed image.
 
@@ -1505,21 +1637,25 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         seed_idx = speed_sitk.TransformPhysicalPointToIndex(s_lps)
         print(f"  FM-Seed-Index (LPS): {seed_idx}")
 
-        # Optional: gespiegelte und geschrumpfte Gegenseite als Startgebiet.
-        # 1. Gegenseite spiegeln → als Visualisierungsknoten anzeigen (blau).
-        # 2. 10 % zum Schwerpunkt schrumpfen → verhindert Überlappung mit
-        #    Knochen oder Siebbeinzellen → als Visualisierungsknoten anzeigen (orange).
-        # 3. Geschrumpftes Volumen als FM-Startgebiet verwenden.
+        # Bestimme den FM-Startbereich je nach Seed-Modus:
+        # - Gegenseite: spiegeln + 10 % schrumpfen (Knochen-/Siebbeinchutz)
+        # - Modell:     positioniertes Template direkt exportieren (lila Anzeige)
+        # - Manuell:    einzelner Punkt auf der Orbitaachse (Fallback für alle Modi)
+        name_prefix = segmentation_node.GetName().replace("_IntraorbitalSeg", "") + "_"
         if contralateral_seg_node is not None and contralateral_seg_id is not None:
-            name_prefix = segmentation_node.GetName().replace("_IntraorbitalSeg", "") + "_"
-            shrunk_points = self._prepareContralateralSeed(
+            region_points = self._prepareContralateralSeed(
                 contralateral_seg_node, contralateral_seg_id, volume_node, name_prefix
             )
-            trial_points = shrunk_points if shrunk_points else [seed_idx]
-            if seed_idx not in trial_points:
-                trial_points = [seed_idx] + trial_points
+        elif model_seed_node is not None and model_seed_id is not None:
+            region_points = self._prepareModelSeed(
+                model_seed_node, model_seed_id, volume_node, name_prefix
+            )
         else:
-            trial_points = [seed_idx]
+            region_points = []
+
+        trial_points = region_points if region_points else [seed_idx]
+        if seed_idx not in trial_points:
+            trial_points = [seed_idx] + trial_points
 
         # --- 15. Fast Marching ausführen ---
         # Der Filter berechnet die Arrival-Time für jeden Voxel ausgehend vom Seed.
@@ -1722,6 +1858,51 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             print("  Shrunk seed is empty – falling back to single seed.")
             return []
 
+        return [(int(nz_i[m]), int(nz_j[m]), int(nz_k[m])) for m in range(len(nz_i))]
+
+    def _prepareModelSeed(
+        self, model_seg_node, model_seg_id, volume_node, name_prefix=""
+    ):
+        """Exports the user-positioned template segmentation into the CT volume's geometry
+        and returns its voxel indices as FM trial points.
+
+        The template is expected to have a vtkMRMLLinearTransformNode applied (via
+        onPositionModelButton).  ExportSegmentsToLabelmapNode honours the parent
+        transform automatically, so the exported labelmap reflects the positioned state.
+        """
+        import SimpleITK as sitk
+        import sitkUtils
+
+        seg_id_arr = vtk.vtkStringArray()
+        seg_id_arr.InsertNextValue(model_seg_id)
+        tmp_lm = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLLabelMapVolumeNode", "_TmpModelLM"
+        )
+        try:
+            slicer.modules.segmentations.logic().ExportSegmentsToLabelmapNode(
+                model_seg_node, seg_id_arr, tmp_lm, volume_node
+            )
+            model_sitk = sitkUtils.PullVolumeFromSlicer(tmp_lm)
+        finally:
+            slicer.mrmlScene.RemoveNode(tmp_lm)
+
+        model_arr = sitk.GetArrayFromImage(model_sitk)
+        n_vox = int(model_arr.sum())
+        print(f"  Model seed: {n_vox:,} voxels")
+
+        if n_vox == 0:
+            print("  Model seed is empty – verify the template is positioned inside the CT volume.")
+            return []
+
+        # Display the positioned seed region (purple) for user verification
+        self._importBinaryAsSegNode(
+            model_sitk, volume_node,
+            name=f"{name_prefix}ModelSeed",
+            color=(0.7, 0.2, 0.9),
+            opacity=0.4,
+        )
+
+        nz_k, nz_j, nz_i = np.where(model_arr > 0)
         return [(int(nz_i[m]), int(nz_j[m]), int(nz_k[m])) for m in range(len(nz_i))]
 
     def _shrinkBinaryMask(self, binary_arr, scale_factor: float = 0.9):

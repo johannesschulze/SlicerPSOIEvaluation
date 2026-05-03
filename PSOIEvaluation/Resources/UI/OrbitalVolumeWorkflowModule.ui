@@ -792,28 +792,120 @@ QToolBox::tab:selected {
          </item>
 
          <item row="16" column="0">
-          <widget class="QLabel" name="labelUseContralateral">
+          <widget class="QLabel" name="labelSeedMode">
            <property name="text">
-            <string>Use Contralateral Mirror:</string>
+            <string>Seed Mode:</string>
            </property>
           </widget>
          </item>
          <item row="16" column="1">
-          <widget class="QCheckBox" name="useContralateralCheckBox">
-           <property name="toolTip">
-            <string>Uses the mirrored segmentation of the opposite orbit as the initial Fast Marching seed region (requires the contralateral side to be segmented first)</string>
+          <widget class="QWidget" name="seedModeWidget">
+           <layout class="QVBoxLayout" name="seedModeLayout">
+            <property name="margin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QRadioButton" name="rbSeedManual">
+              <property name="text">
+               <string>Manual</string>
+              </property>
+              <property name="toolTip">
+               <string>Standard Fast Marching from a single seed point on the orbital axis</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QRadioButton" name="rbSeedContralateral">
+              <property name="text">
+               <string>Mirror contralateral</string>
+              </property>
+              <property name="toolTip">
+               <string>Mirror the opposite side's segmentation across the sagittal plane, shrink it by 10 % towards the centroid, and use it as the initial FM seed region</string>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QRadioButton" name="rbSeedModelBased">
+              <property name="text">
+               <string>Model-based</string>
+              </property>
+              <property name="toolTip">
+               <string>Load a template segmentation, position it with the interactive handles, and use the positioned volume as the FM seed region</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+
+         <item row="17" column="0">
+          <widget class="QLabel" name="labelModelSeed">
+           <property name="text">
+            <string>Template:</string>
            </property>
-           <property name="enabled">
-            <bool>false</bool>
-           </property>
-           <property name="checked">
+           <property name="visible">
             <bool>false</bool>
            </property>
           </widget>
          </item>
+         <item row="17" column="1">
+          <widget class="QWidget" name="modelSeedWidget">
+           <property name="visible">
+            <bool>false</bool>
+           </property>
+           <layout class="QVBoxLayout" name="modelSeedLayout">
+            <property name="margin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="qMRMLNodeComboBox" name="modelSeedSelector" native="true">
+              <property name="toolTip">
+               <string>Template segmentation to use as the model-based seed. Position it with the button below before segmenting.</string>
+              </property>
+              <property name="nodeTypes" stdset="0">
+               <stringlist notr="true">
+                <string>vtkMRMLSegmentationNode</string>
+               </stringlist>
+              </property>
+              <property name="showChildNodeTypes" stdset="0">
+               <bool>false</bool>
+              </property>
+              <property name="addEnabled" stdset="0">
+               <bool>false</bool>
+              </property>
+              <property name="removeEnabled" stdset="0">
+               <bool>false</bool>
+              </property>
+              <property name="noneEnabled" stdset="0">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="positionModelButton">
+              <property name="text">
+               <string>Position Model</string>
+              </property>
+              <property name="toolTip">
+               <string>Creates a LinearTransform node centred at the orbital entry plane, applies it to the template, and enables the 3D interaction handles for translation and rotation</string>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
 
          <!-- Trennlinie: Nachbearbeitung -->
-         <item row="17" column="0" colspan="2">
+         <item row="18" column="0" colspan="2">
           <widget class="QLabel" name="labelPostprocessingHeader">
            <property name="text">
             <string>&lt;b&gt;Post-processing:&lt;/b&gt;</string>
@@ -821,14 +913,14 @@ QToolBox::tab:selected {
           </widget>
          </item>
 
-         <item row="18" column="0">
+         <item row="19" column="0">
           <widget class="QLabel" name="labelRemoveSatellites">
            <property name="text">
             <string>Remove Satellites:</string>
            </property>
           </widget>
          </item>
-         <item row="18" column="1">
+         <item row="19" column="1">
           <widget class="QCheckBox" name="removeSatellitesCheckBox">
            <property name="toolTip">
             <string>Remove small disconnected regions (satellites / trailing artefacts) after segmentation. Keeps only components whose effective diameter exceeds the threshold below.</string>
@@ -839,14 +931,14 @@ QToolBox::tab:selected {
           </widget>
          </item>
 
-         <item row="19" column="0">
+         <item row="20" column="0">
           <widget class="QLabel" name="labelSatelliteDiam">
            <property name="text">
             <string>Min. Diameter (mm):</string>
            </property>
           </widget>
          </item>
-         <item row="19" column="1">
+         <item row="20" column="1">
           <widget class="QDoubleSpinBox" name="satelliteDiamSpinBox">
            <property name="toolTip">
             <string>Sphere-equivalent diameter threshold (mm). Connected components smaller than this are removed as satellite regions.</string>
@@ -934,6 +1026,16 @@ QToolBox::tab:selected {
    <hints>
     <hint type="sourcelabel"><x>350</x><y>20</y></hint>
     <hint type="destinationlabel"><x>350</x><y>500</y></hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitalVolumeWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>modelSeedSelector</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel"><x>350</x><y>20</y></hint>
+    <hint type="destinationlabel"><x>350</x><y>550</y></hint>
    </hints>
   </connection>
  </connections>
