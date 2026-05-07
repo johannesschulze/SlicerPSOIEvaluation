@@ -115,7 +115,7 @@ This file was originally developed by Johannes Schulze (Bundeswehrkrankenhaus Ul
 
 		currentStyleName = slicer.app.style().objectName
 
-		if(currentStyleName == 'slicer'):
+		if(currentStyleName == 'Slicer'):
 			slicer.app.setStyle('Dark Slicer')
 		else:
 			slicer.app.setStyle('Slicer')

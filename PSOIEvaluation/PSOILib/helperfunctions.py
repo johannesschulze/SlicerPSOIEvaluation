@@ -378,11 +378,25 @@ def showAllDisplayNodes():
     for node in slicer.util.getNodesByClass("vtkMRMLDisplayNode"):
         node.SetVisibility(True)
 
-def showVolumeRendering(volumeNode, preset = "CT-Bone", hideSoftTissue = False, thresholds = [300,500]):
+def hideAllVolumeRenderingNodes() -> None:
+    """
+    Hide all Volume Renderings in the scene
+    """
+    for node in slicer.util.getNodesByClass("vtkMRMLVolumeRenderingDisplayNode"):
+        node.SetVisibility3D(False)
+
+def showVolumeRendering(
+        volumeNode,
+        preset: str = "CT-Bone",
+        hideSoftTissue: bool = False,
+        thresholds: tuple = (300,500)):
     """
     activate volume rendering for node
 
-    :param volumeNode: node to be rendered as a volume. Defaults to "CT-Bone"
+    :param volumeNode: node to be rendered as a volume.
+    :param preset: 3D-Slicer Volume Rendering Preset. Defaults to "CT-Bone"
+    :param hideSoftTissue: Adapt the gradient transfer function to only show bone
+    :param thresholds: Threshold to be used for setting up te gradient transfer function
     """
     volRenLogic = slicer.modules.volumerendering.logic()
     displayNode = volRenLogic.CreateDefaultVolumeRenderingNodes(volumeNode)

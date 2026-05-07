@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>700</width>
-    <height>900</height>
+    <height>988</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -16,54 +16,25 @@
     <verstretch>0</verstretch>
    </sizepolicy>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout">
-   <item>
-    <widget class="QWidget" name="parameterNodeWidget">
-     <layout class="QFormLayout" name="formLayoutParameterNode">
-      <item row="0" column="0">
-       <widget class="QLabel" name="labelParameterNode">
-        <property name="text">
-         <string>Parameter set:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <widget class="qMRMLNodeComboBox" name="parameterNodeSelector" native="true">
-        <property name="toolTip">
-         <string>Selects the parameter set for the current CT case. A new parameter set can be created with the "+" button.</string>
-        </property>
-        <property name="nodeTypes" stdset="0">
-         <stringlist notr="true">
-          <string>vtkMRMLScriptedModuleNode</string>
-         </stringlist>
-        </property>
-        <property name="showHidden" stdset="0">
-         <bool>true</bool>
-        </property>
-        <property name="showChildNodeTypes" stdset="0">
-         <bool>false</bool>
-        </property>
-        <property name="addEnabled" stdset="0">
-         <bool>true</bool>
-        </property>
-        <property name="removeEnabled" stdset="0">
-         <bool>true</bool>
-        </property>
-        <property name="renameEnabled" stdset="0">
-         <bool>true</bool>
-        </property>
-        <property name="noneEnabled" stdset="0">
-         <bool>false</bool>
-        </property>
-        <property name="baseName" stdset="0">
-         <string>OrbitalVolumeWorkflow</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
+  <layout class="QVBoxLayout" name="mainVerticalLayout">
+   <item>  <!-- Vertical Spacer Top -->
+    <spacer name="verticalSpacerTop">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+     <property name="sizeType">
+      <enum>QSizePolicy::Fixed</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>0</height>
+      </size>
+     </property>
+    </spacer>
    </item>
-   <item>
+
+   <item> <!-- Label Top-->
     <widget class="QLabel" name="labelTopDescription">
      <property name="text">
       <string>&lt;h3&gt;Orbital Volume Workflow&lt;/h3&gt;&lt;p&gt;Step 1 creates an entry plane (mesh) from a closed curve along the orbital rim. Step 2 segments the intraorbital volume from the CT using Fast Marching.&lt;/p&gt;</string>
@@ -73,178 +44,284 @@
      </property>
     </widget>
    </item>
-   <item>
-    <widget class="QWidget" name="ctVolumeWidget">
-     <layout class="QFormLayout" name="formLayoutCTVolume">
-      <item row="0" column="0">
-       <widget class="QLabel" name="labelCTVolume">
+
+   <item> <!-- Open Documentation Button -->
+    <widget class="QPushButton" name="openDocumentationButton">
+     <property name="text">
+      <string>Open Documentation</string>
+     </property>
+    </widget>
+   </item>
+
+   <item> <!-- Vertical Spacer Between Label/Description and UI -->
+    <spacer name="verticalSpacerBelowLabel">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+     <property name="sizeType">
+      <enum>QSizePolicy::Fixed</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>15</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   
+   <item> <!-- Layout CT-Volume and ParameterNode -->
+    <layout class="QFormLayout" name="formLayoutCTVolume">
+     <item row="0" column="0">
+      <widget class="QLabel" name="labelParameterNode">
+       <property name="text">
+        <string>Parameter set:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="qMRMLNodeComboBox" name="parameterNodeSelector" native="true">
+       <property name="toolTip">
+        <string>Selects the parameter set for the current CT case. A new parameter set can be created with the &quot;+&quot; button.</string>
+       </property>
+       <property name="nodeTypes" stdset="0">
+        <stringlist notr="true">
+         <string>vtkMRMLScriptedModuleNode</string>
+        </stringlist>
+       </property>
+       <property name="showHidden" stdset="0">
+        <bool>true</bool>
+       </property>
+       <property name="showChildNodeTypes" stdset="0">
+        <bool>false</bool>
+       </property>
+       <property name="addEnabled" stdset="0">
+        <bool>true</bool>
+       </property>
+       <property name="removeEnabled" stdset="0">
+        <bool>true</bool>
+       </property>
+       <property name="renameEnabled" stdset="0">
+        <bool>true</bool>
+       </property>
+       <property name="noneEnabled" stdset="0">
+        <bool>false</bool>
+       </property>
+       <property name="baseName" stdset="0">
+        <string>OrbitalVolumeWorkflow</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="labelPreset">
+       <property name="toolTip">
+        <string>Apply a parameter preset (HU window, stopping value, speed sigma)</string>
+       </property>
+       <property name="text">
+        <string>Preset:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QComboBox" name="presetComboBox">
+       <property name="toolTip">
+        <string>Select a preset to overwrite HU min/max, stopping value, and speed sigma. Switch to Manual to keep custom values.</string>
+       </property>
+       <item>
         <property name="text">
-         <string>CT Volume (shared):</string>
+         <string>CT Bone Window</string>
         </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <widget class="QWidget" name="ctVolumeRowWidget">
-        <layout class="QHBoxLayout" name="ctVolumeRowLayout">
-         <property name="margin">
-          <number>0</number>
+       </item>
+       <item>
+        <property name="text">
+         <string>Intraoperative CBCT</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Manual</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="labelCTVolume">
+       <property name="text">
+        <string>CT Volume (shared):</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <layout class="QHBoxLayout" name="ctVolumeRowLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="qMRMLNodeComboBox" name="ctVolumeSelector" native="true">
+         <property name="toolTip">
+          <string>CT dataset (HU-calibrated), applies to both left and right orbit</string>
          </property>
-         <item>
-          <widget class="qMRMLNodeComboBox" name="ctVolumeSelector" native="true">
-           <property name="toolTip">
-            <string>CT dataset (HU-calibrated), applies to both left and right orbit</string>
-           </property>
-           <property name="nodeTypes" stdset="0">
-            <stringlist notr="true">
-             <string>vtkMRMLScalarVolumeNode</string>
-            </stringlist>
-           </property>
-           <property name="showChildNodeTypes" stdset="0">
-            <bool>false</bool>
-           </property>
-           <property name="addEnabled" stdset="0">
-            <bool>false</bool>
-           </property>
-           <property name="removeEnabled" stdset="0">
-            <bool>false</bool>
-           </property>
-           <property name="noneEnabled" stdset="0">
-            <bool>true</bool>
-           </property>
-           <property name="SlicerParameterName" stdset="0">
-            <string>ctVolume</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="toggleVolumeRenderingButton">
-           <property name="text">
-            <string>3D on</string>
-           </property>
-           <property name="toolTip">
-            <string>Show or hide volume rendering</string>
-           </property>
-           <property name="checkable">
-            <bool>true</bool>
-           </property>
-           <property name="checked">
-            <bool>false</bool>
-           </property>
-           <property name="maximumWidth">
-            <number>70</number>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-
-      <item row="1" column="0">
-       <widget class="QLabel" name="labelHUShift">
-        <property name="text">
-         <string>HU Shift:</string>
-        </property>
-        <property name="toolTip">
-         <string>Shifts the transfer function of the volume rendering in HU units</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="ctkSliderWidget" name="huShiftSlider">
-        <property name="toolTip">
-         <string>Positive = brighter bones, Negative = emphasize soft tissue</string>
-        </property>
-        <property name="minimum">
-         <double>0.000000000000000</double>
-        </property>
-        <property name="maximum">
-         <double>1000.000000000000000</double>
-        </property>
-        <property name="singleStep">
-         <double>10.000000000000000</double>
-        </property>
-        <property name="value">
-         <double>500.000000000000000</double>
-        </property>
-        <property name="decimals">
-         <number>0</number>
-        </property>
-       </widget>
-      </item>
-
-     </layout>
-    </widget>
+         <property name="nodeTypes" stdset="0">
+          <stringlist notr="true">
+           <string>vtkMRMLScalarVolumeNode</string>
+          </stringlist>
+         </property>
+         <property name="showChildNodeTypes" stdset="0">
+          <bool>false</bool>
+         </property>
+         <property name="addEnabled" stdset="0">
+          <bool>false</bool>
+         </property>
+         <property name="removeEnabled" stdset="0">
+          <bool>false</bool>
+         </property>
+         <property name="noneEnabled" stdset="0">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="toggleVolumeRenderingButton">
+         <property name="toolTip">
+          <string>Show or hide volume rendering</string>
+         </property>
+         <property name="text">
+          <string>3D on</string>
+         </property>
+         <property name="checkable">
+          <bool>true</bool>
+         </property>
+         <property name="checked">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="labelHUShift">
+       <property name="toolTip">
+        <string>Shifts the transfer function of the volume rendering in HU units</string>
+       </property>
+       <property name="text">
+        <string>HU Shift:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="ctkSliderWidget" name="huShiftSlider" native="true">
+       <property name="toolTip">
+        <string>Positive = brighter bones, Negative = emphasize soft tissue</string>
+       </property>
+       <property name="minimum" stdset="0">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum" stdset="0">
+        <double>1000.000000000000000</double>
+       </property>
+       <property name="singleStep" stdset="0">
+        <double>10.000000000000000</double>
+       </property>
+       <property name="value" stdset="0">
+        <double>500.000000000000000</double>
+       </property>
+       <property name="decimals" stdset="0">
+        <number>0</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
-   <item>
-    <widget class="QWidget" name="sideSelectionWidget">
-     <property name="styleSheet">
-      <string notr="true">QPushButton {
-    font-weight: bold;
-    border: 1px solid black;
-    padding: 4px 12px;
-    min-height: 28px;
-}
-QPushButton:checked {
-    background-color: green;
-    color: white;
-}</string>
+
+   <item> <!-- Vertical Spacer Between CT-Volume/Parameter-Node and Side Selection -->
+    <spacer name="verticalSpacerBelowVolumeSelection">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
      </property>
-     <layout class="QHBoxLayout" name="sideSelectionLayout">
-      <property name="spacing">
-       <number>4</number>
-      </property>
-      <item>
-       <widget class="QPushButton" name="btnSideLeft">
-        <property name="text">
-         <string>Left Orbit</string>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-        <property name="checked">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnSideRight">
-        <property name="text">
-         <string>Right Orbit</string>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-        <property name="checked">
-         <bool>false</bool>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
+     <property name="sizeType">
+      <enum>QSizePolicy::Fixed</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
    </item>
-   <item>
-    <widget class="QToolBox" name="stepsToolbox">
-     <property name="styleSheet">
-      <string notr="true">QToolBox::tab {
-    font-weight: bold;
-    border: 1px solid black;
-}
-QToolBox::tab:selected {
-    background-color: green;
-    color: white;
-}</string>
+
+   <item> <!-- Layout Side Selection-->
+    <layout class="QHBoxLayout" name="sideSelectionLayout">
+     <property name="spacing">
+      <number>4</number>
      </property>
+     <item>
+      <widget class="QPushButton" name="btnSideRight">
+       <property name="text">
+        <string>Right Orbit</string>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnSideLeft">
+       <property name="text">
+        <string>Left Orbit</string>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <item> <!-- Vertical Spacer Between Side Selection and Collapsibles -->
+    <spacer name="verticalSpacerBelowVolumeSelection">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+     <property name="sizeType">
+      <enum>QSizePolicy::Fixed</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>10</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+
+   <item> <!-- Collapsible Orbital Surface -->
+    <!--<widget class="QToolBox" name="stepsToolbox">
      <property name="currentIndex">
-      <number>0</number>
-     </property>
-
-     <!-- ═══════════════════════════════════════════════════════════
-          SEITE 1 – Orbital-Eingangsebene
-          ═══════════════════════════════════════════════════════════ -->
-     <widget class="QWidget" name="pageOrbitalSurface">
-      <attribute name="label">
+      <number>1</number>
+     </property>-->
+     <widget class="ctkCollapsibleButton" name="pageOrbitalSurface">
+      <property name="text">
        <string>1. Create Orbital Entry Plane</string>
-      </attribute>
+      </property>
+      <property name="checked">
+        <bool>false</bool>
+      </property>
       <layout class="QVBoxLayout" name="verticalLayoutSurface">
        <item>
         <widget class="QLabel" name="labelSurfaceDescription">
@@ -258,7 +335,6 @@ QToolBox::tab:selected {
        </item>
        <item>
         <layout class="QFormLayout" name="formLayoutSurface">
-
          <item row="0" column="0">
           <widget class="QLabel" name="labelCurve">
            <property name="text">
@@ -267,52 +343,55 @@ QToolBox::tab:selected {
           </widget>
          </item>
          <item row="0" column="1">
-          <widget class="QWidget" name="curveRowWidget">
-           <layout class="QHBoxLayout" name="curveRowLayout">
-            <property name="margin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="qMRMLNodeComboBox" name="curveSelector" native="true">
-              <property name="toolTip">
-               <string>vtkMRMLMarkupsClosedCurveNode along the orbital rim</string>
-              </property>
-              <property name="nodeTypes" stdset="0">
-               <stringlist notr="true">
-                <string>vtkMRMLMarkupsClosedCurveNode</string>
-               </stringlist>
-              </property>
-              <property name="showChildNodeTypes" stdset="0">
-               <bool>false</bool>
-              </property>
-              <property name="addEnabled" stdset="0">
-               <bool>false</bool>
-              </property>
-              <property name="removeEnabled" stdset="0">
-               <bool>false</bool>
-              </property>
-              <property name="noneEnabled" stdset="0">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="createCurveButton">
-              <property name="text">
-               <string>New Curve</string>
-              </property>
-              <property name="toolTip">
-               <string>Creates a new Closed Curve for the active side and starts placement mode</string>
-              </property>
-              <property name="maximumWidth">
-               <number>110</number>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
+          <layout class="QHBoxLayout" name="curveRowLayout">
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="qMRMLNodeComboBox" name="curveSelector" native="true">
+             <property name="toolTip">
+              <string>vtkMRMLMarkupsClosedCurveNode along the orbital rim</string>
+             </property>
+             <property name="nodeTypes" stdset="0">
+              <stringlist notr="true">
+               <string>vtkMRMLMarkupsClosedCurveNode</string>
+              </stringlist>
+             </property>
+             <property name="showChildNodeTypes" stdset="0">
+              <bool>false</bool>
+             </property>
+             <property name="addEnabled" stdset="0">
+              <bool>false</bool>
+             </property>
+             <property name="removeEnabled" stdset="0">
+              <bool>false</bool>
+             </property>
+             <property name="noneEnabled" stdset="0">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="createCurveButton">
+             <property name="toolTip">
+              <string>Creates a new Closed Curve for the active side and starts placement mode</string>
+             </property>
+             <property name="text">
+              <string></string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </item>
-
          <item row="1" column="0">
           <widget class="QLabel" name="labelMethod">
            <property name="text">
@@ -342,7 +421,6 @@ QToolBox::tab:selected {
            </item>
           </widget>
          </item>
-
          <item row="2" column="0">
           <widget class="QLabel" name="labelSubdivision">
            <property name="text">
@@ -369,7 +447,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="3" column="0">
           <widget class="QLabel" name="labelSmooth">
            <property name="text">
@@ -393,16 +470,15 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
         </layout>
        </item>
        <item>
         <widget class="QPushButton" name="createSurfaceButton">
-         <property name="text">
-          <string>Create Orbital Plane</string>
-         </property>
          <property name="enabled">
           <bool>false</bool>
+         </property>
+         <property name="text">
+          <string>Create Orbital Plane</string>
          </property>
         </widget>
        </item>
@@ -418,14 +494,24 @@ QToolBox::tab:selected {
        </item>
       </layout>
      </widget>
-
-     <!-- ═══════════════════════════════════════════════════════════
-          SEITE 2 – Intraorbitale Volumensegmentierung
-          ═══════════════════════════════════════════════════════════ -->
-     <widget class="QWidget" name="pageVolumeSegmentation">
-      <attribute name="label">
+   </item>
+   
+   <item> <!-- Collapsible Volume Segmentation-->
+     <widget class="ctkCollapsibleButton" name="pageVolumeSegmentation">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>-290</y>
+        <width>668</width>
+        <height>959</height>
+       </rect>
+      </property>
+      <property name="text">
        <string>2. Segment Intraorbital Volume</string>
-      </attribute>
+      </property>
+      <property name="checked">
+        <bool>false</bool>
+      </property>
       <layout class="QVBoxLayout" name="verticalLayoutSegmentation">
        <item>
         <widget class="QLabel" name="labelSegmentationDescription">
@@ -439,7 +525,6 @@ QToolBox::tab:selected {
        </item>
        <item>
         <layout class="QFormLayout" name="formLayoutSegmentation">
-
          <item row="0" column="0">
           <widget class="QLabel" name="labelPlaneModel">
            <property name="text">
@@ -471,8 +556,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
-         <!-- Trennlinie: HU-Fenster -->
          <item row="1" column="0" colspan="2">
           <widget class="QLabel" name="labelHuHeader">
            <property name="text">
@@ -480,7 +563,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="2" column="0">
           <widget class="QLabel" name="labelHuMin">
            <property name="text">
@@ -504,7 +586,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="3" column="0">
           <widget class="QLabel" name="labelHuMax">
            <property name="text">
@@ -528,8 +609,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
-         <!-- Trennlinie: Seed -->
          <item row="4" column="0" colspan="2">
           <widget class="QLabel" name="labelSeedHeader">
            <property name="text">
@@ -537,7 +616,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="5" column="0">
           <widget class="QLabel" name="labelAutoSeed">
            <property name="text">
@@ -555,7 +633,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="6" column="0">
           <widget class="QLabel" name="labelSeedOffset">
            <property name="text">
@@ -565,11 +642,11 @@ QToolBox::tab:selected {
          </item>
          <item row="6" column="1">
           <widget class="QDoubleSpinBox" name="seedOffsetSpinBox">
-           <property name="toolTip">
-            <string>Manual distance of the seed point from the plane centroid in normal direction (only when auto seed is disabled)</string>
-           </property>
            <property name="enabled">
             <bool>false</bool>
+           </property>
+           <property name="toolTip">
+            <string>Manual distance of the seed point from the plane centroid in normal direction (only when auto seed is disabled)</string>
            </property>
            <property name="minimum">
             <double>1.000000000000000</double>
@@ -585,8 +662,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
-         <!-- Trennlinie: Geometrie -->
          <item row="7" column="0" colspan="2">
           <widget class="QLabel" name="labelGeometryHeader">
            <property name="text">
@@ -594,7 +669,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="8" column="0">
           <widget class="QLabel" name="labelOrbitalDepth">
            <property name="text">
@@ -603,47 +677,56 @@ QToolBox::tab:selected {
           </widget>
          </item>
          <item row="8" column="1">
-          <widget class="QWidget" name="orbitalDepthRowWidget">
-           <layout class="QHBoxLayout" name="orbitalDepthRowLayout">
-            <property name="margin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QDoubleSpinBox" name="orbitalDepthSpinBox">
-              <property name="toolTip">
-               <string>Maximum depth of the orbital cylinder from the entry rim to the apex (mm). Can be set automatically by placing a posterior boundary point (P button).</string>
-              </property>
-              <property name="minimum">
-               <double>20.000000000000000</double>
-              </property>
-              <property name="maximum">
-               <double>100.000000000000000</double>
-              </property>
-              <property name="singleStep">
-               <double>1.000000000000000</double>
-              </property>
-              <property name="value">
-               <double>55.000000000000000</double>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="placePosteriorMarkupButton">
-              <property name="text">
-               <string>P</string>
-              </property>
-              <property name="toolTip">
-               <string>Place a single point at the posterior boundary of the orbit. The orbital depth is automatically updated to its projected distance from the entry plane.</string>
-              </property>
-              <property name="maximumWidth">
-               <number>28</number>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
+          <layout class="QHBoxLayout" name="orbitalDepthRowLayout">
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QDoubleSpinBox" name="orbitalDepthSpinBox">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="toolTip">
+              <string>Maximum depth of the orbital cylinder from the entry rim to the apex (mm). Can be set automatically by placing a posterior boundary point (P button).</string>
+             </property>
+             <property name="minimum">
+              <double>20.000000000000000</double>
+             </property>
+             <property name="maximum">
+              <double>100.000000000000000</double>
+             </property>
+             <property name="singleStep">
+              <double>1.000000000000000</double>
+             </property>
+             <property name="value">
+              <double>55.000000000000000</double>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="placePosteriorMarkupButton">
+             <property name="toolTip">
+              <string>Place a single point at the posterior boundary of the orbit. The orbital depth is automatically updated to its projected distance from the entry plane.</string>
+             </property>
+             <property name="text">
+              <string></string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </item>
-
          <item row="9" column="0">
           <widget class="QLabel" name="labelRadiusMargin">
            <property name="text">
@@ -670,8 +753,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
-         <!-- Trennlinie: Fast Marching -->
          <item row="10" column="0" colspan="2">
           <widget class="QLabel" name="labelFMHeader">
            <property name="text">
@@ -679,7 +760,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="11" column="0">
           <widget class="QLabel" name="labelStoppingValue">
            <property name="text">
@@ -706,7 +786,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="12" column="0">
           <widget class="QLabel" name="labelSpeedSigma">
            <property name="text">
@@ -723,7 +802,7 @@ QToolBox::tab:selected {
             <double>10.000000000000000</double>
            </property>
            <property name="maximum">
-            <double>200.000000000000000</double>
+            <double>500.000000000000000</double>
            </property>
            <property name="singleStep">
             <double>5.000000000000000</double>
@@ -733,7 +812,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="13" column="0">
           <widget class="QLabel" name="labelPosteriorBoost">
            <property name="text">
@@ -746,6 +824,9 @@ QToolBox::tab:selected {
            <property name="toolTip">
             <string>Additional weighting of deep voxels (0 = off, &gt;0 = stronger posterior). Prevents anterior leakage</string>
            </property>
+           <property name="decimals">
+            <number>1</number>
+           </property>
            <property name="minimum">
             <double>0.000000000000000</double>
            </property>
@@ -755,16 +836,11 @@ QToolBox::tab:selected {
            <property name="singleStep">
             <double>0.100000000000000</double>
            </property>
-           <property name="decimals">
-            <number>1</number>
-           </property>
            <property name="value">
             <double>1.500000000000000</double>
            </property>
           </widget>
          </item>
-
-         <!-- Trennlinie: Ausgabe -->
          <item row="14" column="0" colspan="2">
           <widget class="QLabel" name="labelOutputHeader">
            <property name="text">
@@ -772,7 +848,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="15" column="0">
           <widget class="QLabel" name="labelShowSeed">
            <property name="text">
@@ -790,7 +865,6 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
          <item row="16" column="0">
           <widget class="QLabel" name="labelSeedMode">
            <property name="text">
@@ -799,128 +873,220 @@ QToolBox::tab:selected {
           </widget>
          </item>
          <item row="16" column="1">
-          <widget class="QWidget" name="seedModeWidget">
-           <layout class="QVBoxLayout" name="seedModeLayout">
-            <property name="margin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QRadioButton" name="rbSeedManual">
-              <property name="text">
-               <string>Manual</string>
-              </property>
-              <property name="toolTip">
-               <string>Standard Fast Marching from a single seed point on the orbital axis</string>
-              </property>
-              <property name="checked">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QRadioButton" name="rbSeedContralateral">
-              <property name="text">
-               <string>Mirror contralateral</string>
-              </property>
-              <property name="toolTip">
-               <string>Mirror the opposite side's segmentation across the sagittal plane, shrink it by 10 % towards the centroid, and use it as the initial FM seed region</string>
-              </property>
-              <property name="enabled">
-               <bool>false</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QRadioButton" name="rbSeedModelBased">
-              <property name="text">
-               <string>Model-based</string>
-              </property>
-              <property name="toolTip">
-               <string>Load a template segmentation, position it with the interactive handles, and use the positioned volume as the FM seed region</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-
-         <item row="17" column="0">
-          <widget class="QLabel" name="labelModelSeed">
-           <property name="text">
-            <string>Template:</string>
+          <layout class="QVBoxLayout" name="seedModeLayout">
+           <property name="leftMargin">
+            <number>0</number>
            </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QRadioButton" name="rbSeedManual">
+             <property name="toolTip">
+              <string>Standard Fast Marching from a single seed point on the orbital axis</string>
+             </property>
+             <property name="text">
+              <string>Manual</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QRadioButton" name="rbSeedContralateral">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+             <property name="toolTip">
+              <string>Mirror the opposite side's segmentation across the sagittal plane, shrink it by 10 % towards the centroid, and use it as the initial FM seed region</string>
+             </property>
+             <property name="text">
+              <string>Mirror contralateral</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QRadioButton" name="rbSeedModelBased">
+             <property name="toolTip">
+              <string>Load a template segmentation, position it with the interactive handles, and use the positioned volume as the FM seed region</string>
+             </property>
+             <property name="text">
+              <string>Model-based</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item row="17" column="0">
+          <widget class="QLabel" name="labelContraPosition">
            <property name="visible">
             <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Positionierung:</string>
            </property>
           </widget>
          </item>
          <item row="17" column="1">
-          <widget class="QWidget" name="modelSeedWidget">
+           <widget class="QWidget" name="positionContralateralWidget">
+            <layout class="QVBoxLayout" name="positionContralateralLayout">
+            <property name="leftMargin">
+                <number>0</number>
+            </property>
+            <property name="topMargin">
+                <number>0</number>
+            </property>
+            <property name="rightMargin">
+                <number>0</number>
+            </property>
+            <property name="bottomMargin">
+                <number>0</number>
+            </property>
+            <item>
+                <widget class="QPushButton" name="positionContralateralButton">
+                <property name="enabled">
+                <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                <string>Spiegelt das kontralaterale Segment und platziert es mit interaktiven 2D-Handles. Vor der eigentlichen Segmentierung positionieren, damit das gespiegelte Volumen als FM-Seed genutzt wird.</string>
+                </property>
+                <property name="text">
+                <string>Position Mirrored</string>
+                </property>
+                </widget>
+            </item>
+            </layout>
+           </widget>
+         </item>
+         <item row="18" column="0">
+          <widget class="QLabel" name="labelModelSeed">
            <property name="visible">
             <bool>false</bool>
            </property>
-           <layout class="QVBoxLayout" name="modelSeedLayout">
-            <property name="margin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="qMRMLNodeComboBox" name="modelSeedSelector" native="true">
-              <property name="toolTip">
-               <string>Template segmentation to use as the model-based seed. Position it with the button below before segmenting.</string>
-              </property>
-              <property name="nodeTypes" stdset="0">
-               <stringlist notr="true">
-                <string>vtkMRMLSegmentationNode</string>
-               </stringlist>
-              </property>
-              <property name="showChildNodeTypes" stdset="0">
-               <bool>false</bool>
-              </property>
-              <property name="addEnabled" stdset="0">
-               <bool>false</bool>
-              </property>
-              <property name="removeEnabled" stdset="0">
-               <bool>false</bool>
-              </property>
-              <property name="noneEnabled" stdset="0">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="positionModelButton">
-              <property name="text">
-               <string>Position Model</string>
-              </property>
-              <property name="toolTip">
-               <string>Creates a LinearTransform node centred at the orbital entry plane, applies it to the template, and enables the 3D interaction handles for translation and rotation</string>
-              </property>
-              <property name="enabled">
-               <bool>false</bool>
-              </property>
-             </widget>
-            </item>
-           </layout>
+           <property name="text">
+            <string>Template:</string>
+           </property>
           </widget>
          </item>
-
-         <!-- Trennlinie: Nachbearbeitung -->
-         <item row="18" column="0" colspan="2">
+         <item row="18" column="1">
+          <widget class="QWidget" name="modelSeedWidget">
+            <layout class="QVBoxLayout" name="modelSeedLayout">
+            <property name="leftMargin">
+                <number>0</number>
+            </property>
+            <property name="topMargin">
+                <number>0</number>
+            </property>
+            <property name="rightMargin">
+                <number>0</number>
+            </property>
+            <property name="bottomMargin">
+                <number>0</number>
+            </property>
+            <item>
+                <widget class="qMRMLNodeComboBox" name="modelSeedSelector" native="true">
+                <property name="toolTip">
+                <string>Template segmentation to use as the model-based seed. Position it with the button below before segmenting.</string>
+                </property>
+                <property name="nodeTypes" stdset="0">
+                <stringlist notr="true">
+                <string>vtkMRMLSegmentationNode</string>
+                </stringlist>
+                </property>
+                <property name="showChildNodeTypes" stdset="0">
+                <bool>false</bool>
+                </property>
+                <property name="addEnabled" stdset="0">
+                <bool>false</bool>
+                </property>
+                <property name="removeEnabled" stdset="0">
+                <bool>false</bool>
+                </property>
+                <property name="noneEnabled" stdset="0">
+                <bool>true</bool>
+                </property>
+                </widget>
+            </item>
+            <item>
+                <widget class="QPushButton" name="loadTemplateButton">
+                <property name="toolTip">
+                <string>Load a segmentation file (.seg.nrrd, .nrrd, .nii, .nii.gz) as a template and add it to the scene</string>
+                </property>
+                <property name="text">
+                <string>Load from file…</string>
+                </property>
+                </widget>
+            </item>
+            <item>
+                <layout class="QHBoxLayout" name="positionMirrorLayout">
+                <property name="leftMargin">
+                <number>0</number>
+                </property>
+                <property name="topMargin">
+                <number>0</number>
+                </property>
+                <property name="rightMargin">
+                <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                <number>0</number>
+                </property>
+                <item>
+                <widget class="QPushButton" name="positionModelButton">
+                <property name="enabled">
+                    <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                    <string>Creates a LinearTransform node centred at the orbital entry plane, applies it to the template, and enables the 3D interaction handles for translation and rotation</string>
+                </property>
+                <property name="text">
+                    <string>Position Model</string>
+                </property>
+                </widget>
+                </item>
+                <item>
+                <widget class="QPushButton" name="mirrorTemplateButton">
+                <property name="enabled">
+                    <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                    <string>Mirrors the template along the midsagittal plane (X=0). Press again to undo.</string>
+                </property>
+                <property name="text">
+                    <string>Mirror</string>
+                </property>
+                <property name="checkable">
+                    <bool>true</bool>
+                </property>
+                </widget>
+                </item>
+                </layout>
+            </item>
+            </layout>
+          </widget>
+         </item>
+         <item row="19" column="0" colspan="2">
           <widget class="QLabel" name="labelPostprocessingHeader">
            <property name="text">
             <string>&lt;b&gt;Post-processing:&lt;/b&gt;</string>
            </property>
           </widget>
          </item>
-
-         <item row="19" column="0">
+         <item row="20" column="0">
           <widget class="QLabel" name="labelRemoveSatellites">
            <property name="text">
             <string>Remove Satellites:</string>
            </property>
           </widget>
          </item>
-         <item row="19" column="1">
+         <item row="20" column="1">
           <widget class="QCheckBox" name="removeSatellitesCheckBox">
            <property name="toolTip">
             <string>Remove small disconnected regions (satellites / trailing artefacts) after segmentation. Keeps only components whose effective diameter exceeds the threshold below.</string>
@@ -930,15 +1096,14 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
-         <item row="20" column="0">
+         <item row="21" column="0">
           <widget class="QLabel" name="labelSatelliteDiam">
            <property name="text">
             <string>Min. Diameter (mm):</string>
            </property>
           </widget>
          </item>
-         <item row="20" column="1">
+         <item row="21" column="1">
           <widget class="QDoubleSpinBox" name="satelliteDiamSpinBox">
            <property name="toolTip">
             <string>Sphere-equivalent diameter threshold (mm). Connected components smaller than this are removed as satellite regions.</string>
@@ -957,26 +1122,146 @@ QToolBox::tab:selected {
            </property>
           </widget>
          </item>
-
+         <item row="22" column="0" colspan="2">
+          <widget class="QLabel" name="labelCutoffHeader">
+           <property name="text">
+            <string>&lt;b&gt;Posteriore Cutoff-Ebene (beide Seiten):&lt;/b&gt;</string>
+           </property>
+          </widget>
+         </item>
+         <item row="23" column="0">
+          <widget class="QLabel" name="labelCutoffPoint">
+           <property name="text">
+            <string>Cutoff-Punkt:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="23" column="1">
+          <layout class="QHBoxLayout" name="cutoffRowLayout">
+           <item>
+            <widget class="qMRMLNodeComboBox" name="cutoffNodeSelector" native="true">
+             <property name="toolTip">
+              <string>Wählt den Markierungs-Node für den posterioren Cutoff-Punkt. Ein bestehender Node aus einem anderen Parameter-Set kann hier direkt wiederverwendet werden.</string>
+             </property>
+             <property name="nodeTypes" stdset="0">
+              <stringlist notr="true">
+               <string>vtkMRMLMarkupsFiducialNode</string>
+              </stringlist>
+             </property>
+             <property name="showChildNodeTypes" stdset="0">
+              <bool>false</bool>
+             </property>
+             <property name="addEnabled" stdset="0">
+              <bool>false</bool>
+             </property>
+             <property name="removeEnabled" stdset="0">
+              <bool>false</bool>
+             </property>
+             <property name="noneEnabled" stdset="0">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="placeCutoffButton">
+             <property name="toolTip">
+              <string>Erstellt einen neuen Cutoff-Punkt und aktiviert den Platzierungs-Modus. Die Segmentierung wird auf keiner Seite über diese Ebene hinaus ausgedehnt.</string>
+             </property>
+             <property name="text">
+              <string></string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item row="24" column="0">
+          <widget class="QLabel" name="labelCutoffPosition">
+           <property name="text">
+            <string>Position:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="24" column="1">
+          <widget class="QLabel" name="cutoffPositionLabel">
+           <property name="text">
+            <string>nicht gesetzt</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item>
-        <widget class="QPushButton" name="segmentVolumeButton">
-         <property name="text">
-          <string>Segment Volume</string>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="segmentButtonsLayout">
+         <item>
+          <widget class="QPushButton" name="segmentVolumeButton">
+           <property name="text">
+            <string>Segment Volume</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="clearSideButton">
+           <property name="toolTip">
+            <string>Löscht alle Segmentierungs-Nodes der aktuell gewählten Seite (Seed, Transforms, Segmentierung, Preview-Nodes) nach Bestätigung.</string>
+           </property>
+           <property name="text">
+            <string>Clear</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="segNodeSelectorLayout">
+         <item>
+          <widget class="QLabel" name="labelSegNodeSelector">
+           <property name="toolTip">
+            <string>Manually assign an existing segmentation node to the current side</string>
+           </property>
+           <property name="text">
+            <string>Segmentation:</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="qMRMLNodeComboBox" name="segNodeSelector" native="true">
+           <property name="toolTip">
+            <string>Select an existing vtkMRMLSegmentationNode to use as the result for the current side. Leave empty to clear.</string>
+           </property>
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLSegmentationNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="noneEnabled" stdset="0">
+            <bool>true</bool>
+           </property>
+           <property name="noneDisplay" stdset="0">
+            <string>(none)</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <widget class="QPushButton" name="openSegmentEditorButton">
-         <property name="text">
-          <string>Edit in Segment Editor (Scissors)</string>
+         <property name="enabled">
+          <bool>false</bool>
          </property>
          <property name="toolTip">
           <string>Opens the Segment Editor with the Scissors tool active for manual corrections. The volume is automatically recalculated after editing.</string>
          </property>
-         <property name="enabled">
-          <bool>false</bool>
+         <property name="text">
+          <string>Edit in Segment Editor (Scissors)</string>
          </property>
         </widget>
        </item>
@@ -990,22 +1275,82 @@ QToolBox::tab:selected {
          </property>
         </widget>
        </item>
+       <item>
+        <widget class="QPushButton" name="exportResultsButton">
+         <property name="toolTip">
+          <string>Exports segmentation parameters and volumes for both sides to results_orbital_volume.xlsx in the CT volume's directory</string>
+         </property>
+         <property name="text">
+          <string>Export Results (Excel)</string>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
-
-    </widget>
+    <!--</widget>-->
    </item>
+
+   <item> <!-- Vertical Spacer Bottom (expanding)-->
+      <spacer name="verticalSpacerBottom">
+        <property name="orientation">
+           <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+            <size>
+                <width>40</width>
+                <height>20</height>
+            </size>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+      </spacer>
+    </item>
   </layout>
  </widget>
- <connections>
+ <customwidgets> <!-- custom widgets -->
+  <customwidget>
+   <class>qMRMLWidget</class>
+   <extends>QWidget</extends>
+   <header>qmrmlwidget.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>qMRMLNodeComboBox</class>
+   <extends>QWidget</extends>
+   <header>qmrmlnodecombobox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ctkSliderWidget</class>
+   <extends>QWidget</extends>
+   <header>ctksliderwidget.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ctkCollapsibleButton</class>
+   <extends>QWidget</extends>
+   <header>ctkCollapsibleButton.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections> <!-- Connections -->
   <connection>
    <sender>OrbitalVolumeWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>curveSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
-    <hint type="sourcelabel"><x>350</x><y>20</y></hint>
-    <hint type="destinationlabel"><x>350</x><y>150</y></hint>
+    <hint type="sourcelabel">
+     <x>350</x>
+     <y>20</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>350</x>
+     <y>150</y>
+    </hint>
    </hints>
   </connection>
   <connection>
@@ -1014,8 +1359,14 @@ QToolBox::tab:selected {
    <receiver>ctVolumeSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
-    <hint type="sourcelabel"><x>350</x><y>20</y></hint>
-    <hint type="destinationlabel"><x>350</x><y>450</y></hint>
+    <hint type="sourcelabel">
+     <x>350</x>
+     <y>20</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>350</x>
+     <y>450</y>
+    </hint>
    </hints>
   </connection>
   <connection>
@@ -1024,8 +1375,14 @@ QToolBox::tab:selected {
    <receiver>planeModelSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
-    <hint type="sourcelabel"><x>350</x><y>20</y></hint>
-    <hint type="destinationlabel"><x>350</x><y>500</y></hint>
+    <hint type="sourcelabel">
+     <x>350</x>
+     <y>20</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>350</x>
+     <y>500</y>
+    </hint>
    </hints>
   </connection>
   <connection>
@@ -1034,8 +1391,30 @@ QToolBox::tab:selected {
    <receiver>modelSeedSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
-    <hint type="sourcelabel"><x>350</x><y>20</y></hint>
-    <hint type="destinationlabel"><x>350</x><y>550</y></hint>
+    <hint type="sourcelabel">
+     <x>350</x>
+     <y>20</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>350</x>
+     <y>550</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitalVolumeWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>cutoffNodeSelector</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>350</x>
+     <y>20</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>350</x>
+     <y>600</y>
+    </hint>
    </hints>
   </connection>
  </connections>

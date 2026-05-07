@@ -11,6 +11,7 @@ Unterstützt linke und rechte Orbita getrennt.
 """
 
 import logging
+import os
 from typing import Optional
 
 import numpy as np
@@ -47,13 +48,20 @@ class OrbitalVolumeWorkflowModule(ScriptedLoadableModule):
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "PSOI Evaluation")]
         self.parent.dependencies = []
         self.parent.contributors = ["Johannes Schulze (Bundeswehrkrankenhaus Ulm)"]
-        self.parent.helpText = _(
-            "This module creates an entry plane for the orbit from a closed curve "
-            "and subsequently segments the intraorbital volume using Fast Marching. "
-            "The left and right orbits are managed separately."
+        _doc_html = os.path.join(
+            os.path.dirname(__file__), "Resources", "Docs", "OrbitalVolumeWorkflowModule","orbita_volume_workflow_DE.html"
+        )
+        _doc_url = "file://" + _doc_html.replace("\\", "/")
+        self.parent.helpText = (
+            _("This module creates an entry plane for the orbit from a closed curve "
+              "and subsequently segments the intraorbital volume using Fast Marching. "
+              "The left and right orbits are managed separately.")
+            + f' <a target="_blank" href="{_doc_url}">'
+            + _("Open manual (DE)")
+            + "</a>"
         )
         self.parent.acknowledgementText = _(
-            "Developed by Johannes Schulze (Bundeswehrkrankenhaus Ulm) "
+            "Developed by Johannes Schulze (Bundeswehrkrankenhaus Ulm/Universität Ulm) "
             "without external funding."
         )
 
@@ -104,10 +112,33 @@ class OrbitalVolumeWorkflowModuleParameterNode:
     modelSeedTransformRight: vtkMRMLLinearTransformNode
     posteriorMarkupLeft:     vtkMRMLMarkupsFiducialNode
     posteriorMarkupRight:   vtkMRMLMarkupsFiducialNode
+    posteriorCutoffNode:     vtkMRMLMarkupsFiducialNode   # shared, beide Seiten
     removeSatellitesLeft:   bool  = True
     removeSatellitesRight:  bool  = True
     satelliteDiamLeft:      float = 3.0
     satelliteDiamRight:     float = 3.0
+    contraPositionedNodeLeft:       vtkMRMLSegmentationNode
+    contraPositionedNodeRight:      vtkMRMLSegmentationNode
+    contraPositionedTransformLeft:  vtkMRMLLinearTransformNode
+    contraPositionedTransformRight: vtkMRMLLinearTransformNode
+    currentStep : str = ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Presets
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Keys match combobox item text; "Manual" has no entry (never applied programmatically).
+SEGMENTATION_PRESETS = {
+    "CT Bone Window": {
+        "huMin": -200, "huMax": 300,
+        "stoppingValue": 25.0, "speedSigma": 70.0,
+    },
+    "Intraoperative CBCT": {
+        "huMin": -300, "huMax": 500,
+        "stoppingValue": 20.0, "speedSigma": 120.0,
+    },
+}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -128,13 +159,16 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self._curveNodes   = {True: None, False: None}
         self._surfaceTexts = {True: "",   False: ""}
         self._segTexts     = {True: "",   False: ""}
+        self._segVolumes   = {True: None, False: None}  # volume_ml per side
         self._vrDisplayNode = None
         # Segmentierungs-Nodes und Observer für automatische Volumen-Neuberechnung
         self._segNodes     = {True: None, False: None}
         self._segIds       = {True: None, False: None}
         self._segObservers             = {True: None, False: None}
         self._posteriorMarkupObservers = {True: None, False: None}
+        self._cutoffMarkupObserver = None
         self._volumeUpdateSide = None
+        self._applyingPreset = False
         self._volumeUpdateTimer = qt.QTimer()
         self._volumeUpdateTimer.setSingleShot(True)
         self._volumeUpdateTimer.setInterval(1500)
@@ -161,10 +195,21 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
         ScriptedLoadableModuleWidget.setup(self)
 
+        # QTextBrowser intercepts all link clicks; redirect them to the system browser.
+        for browser in self.parent.findChildren(qt.QTextBrowser):
+            browser.setOpenLinks(False)
+            browser.anchorClicked.connect(lambda url: qt.QDesktopServices.openUrl(url))
+
         uiWidget = slicer.util.loadUI(self.resourcePath("UI/OrbitalVolumeWorkflowModule.ui"))
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
         uiWidget.setMRMLScene(slicer.mrmlScene)
+        self._uiWidget = uiWidget
+
+        # breaks the ui themening, is obsolete
+        # self._refreshButtonStyles()
+        # slicer.app.connect("paletteChanged(QPalette)", self._refreshButtonStyles)
+        # slicer.app.connect("styleChanged(QString)", self._refreshButtonStyles)
 
         self.logic = OrbitalVolumeWorkflowModuleLogic()
 
@@ -184,9 +229,23 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         # Workflow-Buttons
         self.ui.createSurfaceButton.connect("clicked(bool)",    self.onCreateSurfaceButton)
         self.ui.segmentVolumeButton.connect("clicked(bool)",    self.onSegmentVolumeButton)
+        self.ui.clearSideButton.connect("clicked(bool)",       self.onClearSideButton)
+        self.ui.exportResultsButton.connect("clicked(bool)",   self.onExportResultsButton)
         self.ui.autoSeedCheckBox.connect("toggled(bool)",       self.onAutoSeedToggled)
-        self.ui.stepsToolbox.connect("currentChanged(int)",     self.onStepsToolboxCurrentChanged)
+        #self.ui.stepsToolbox.connect("currentChanged(int)",     self.onStepsToolboxCurrentChanged)
+    
         self.ui.placePosteriorMarkupButton.connect("clicked(bool)", self.onPlacePosteriorMarkupButton)
+        self.ui.placePosteriorMarkupButton.setIcon(qt.QIcon(self.resourcePath("Icons/MarkupsFiducialMouseModePlace.png")))
+        
+        self.ui.placeCutoffButton.connect("clicked(bool)", self.onPlaceCutoffButton)
+        self.ui.placeCutoffButton.setIcon(qt.QIcon(self.resourcePath("Icons/MarkupsFiducialMouseModePlace.png")))
+
+        # Open Documentation Button
+        self.ui.openDocumentationButton.connect("clicked(bool)", self.onOpenDocumentationClicked)
+
+        self.ui.cutoffNodeSelector.connect(
+            "currentNodeChanged(vtkMRMLNode*)", self.onCutoffNodeSelectorChanged
+        )
         self.ui.removeSatellitesCheckBox.connect(
             "toggled(bool)", lambda checked: self.ui.satelliteDiamSpinBox.setEnabled(checked)
         )
@@ -195,17 +254,33 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.modelSeedSelector.connect(
             "currentNodeChanged(vtkMRMLNode*)", self.onModelSeedChanged
         )
-        self.ui.positionModelButton.connect("clicked(bool)", self.onPositionModelButton)
+        self.ui.loadTemplateButton.connect("clicked(bool)",  self.onLoadTemplateButton)
+        self.ui.positionModelButton.connect("clicked(bool)",  self.onPositionModelButton)
+        self.ui.mirrorTemplateButton.connect("toggled(bool)", self.onMirrorTemplateToggled)
+        self.ui.positionContralateralButton.connect("clicked(bool)", self.onPositionContralateralButton)
 
         # Seiten-Buttons
         self.ui.btnSideLeft.connect("clicked()",  lambda: self.onSideChanged(True))
+        #self.ui.btnSideLeft.setIcon(qt.QIcon(self.resourcePath("Icons/orbit_left.png")))
         self.ui.btnSideRight.connect("clicked()", lambda: self.onSideChanged(False))
+        #self.ui.btnSideRight.setIcon(qt.QIcon(self.resourcePath("Icons/orbit_right.png")))
+
+        # Collapsibles
+        self.ui.pageOrbitalSurface.connect("clicked(bool)", lambda x: self.onPageCollapsibleClicked(self.ui.pageOrbitalSurface, x))
+        self.ui.pageVolumeSegmentation.connect("clicked(bool)", lambda x: self.onPageCollapsibleClicked(self.ui.pageVolumeSegmentation, x))
 
         # Selektoren manuell beobachten (kein SlicerParameterName für seitenspezifische Nodes)
         self.ui.curveSelector.connect(
             "currentNodeChanged(vtkMRMLNode*)", self.onCurveChanged)
         self.ui.planeModelSelector.connect(
             "currentNodeChanged(vtkMRMLNode*)", self.onPlaneModelChanged)
+
+        # Preset combobox
+        self.ui.presetComboBox.connect("currentIndexChanged(int)", self.onPresetChanged)
+        self.ui.huMinSpinBox.connect("valueChanged(int)", self._onPresetSpinboxChanged)
+        self.ui.huMaxSpinBox.connect("valueChanged(int)", self._onPresetSpinboxChanged)
+        self.ui.stoppingValueSpinBox.connect("valueChanged(double)", self._onPresetSpinboxChanged)
+        self.ui.speedSigmaSpinBox.connect("valueChanged(double)", self._onPresetSpinboxChanged)
 
         # CT-Volume → Volume-Rendering; HU-Shift-Slider; Toggle-Button
         self.ui.ctVolumeSelector.connect(
@@ -216,6 +291,12 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
         # Neue-Kurve-Button
         self.ui.createCurveButton.connect("clicked(bool)", self.onCreateCurveButton)
+        self.ui.createCurveButton.setIcon(qt.QIcon(self.resourcePath("Icons/MarkupsClosedCurveMouseModePlace.png")))
+
+        # Manuelle Segmentierungsknoten-Auswahl
+        self.ui.segNodeSelector.setMRMLScene(slicer.mrmlScene)
+        self.ui.segNodeSelector.connect(
+            "currentNodeChanged(vtkMRMLNode*)", self.onSegNodeSelectorChanged)
 
         # Segment-Editor-Button (nach Segmentierung aktiviert)
         self.ui.openSegmentEditorButton.connect("clicked(bool)", self.onOpenSegmentEditorButton)
@@ -235,12 +316,15 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 obs    = self._posteriorMarkupObservers.get(side)
                 if markup is not None and obs is not None:
                     markup.RemoveObserver(obs)
+            cutoff_node = getattr(self._parameterNode, "posteriorCutoffNode", None)
+            if cutoff_node is not None and self._cutoffMarkupObserver is not None:
+                cutoff_node.RemoveObserver(self._cutoffMarkupObserver)
         self.removeObservers()
 
     def enter(self) -> None:
         self.initializeParameterNode()
         if self._parameterNode:
-            self.ui.stepsToolbox.setCurrentIndex(self._parameterNode.step)
+            self._activateCurrentStep()
             isLeft = self._parameterNode.sideIsLeft
             self.ui.btnSideLeft.setChecked(isLeft)
             self.ui.btnSideRight.setChecked(not isLeft)
@@ -258,11 +342,115 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         if self.parent.isEntered:
             self.initializeParameterNode()
 
+    def _findWidgetByName(self, name):
+        for i in range(self.ui.mainVerticalLayout.count()):
+            item_widget = self.ui.mainVerticalLayout.itemAt(i).widget()
+
+            if item_widget != None and item_widget.objectName == name:
+                return item_widget
+        
+        return None
+
+    # ------------------------------------------------------------------
+    # Preset
+    # ------------------------------------------------------------------
+
+    def onPresetChanged(self, index: int) -> None:
+        if self._applyingPreset:
+            return
+        name = self.ui.presetComboBox.itemText(index)
+        preset = SEGMENTATION_PRESETS.get(name)
+        if preset is None:
+            return  # "Manual" selected programmatically or by user — nothing to apply
+        ok = slicer.util.confirmOkCancelDisplay(
+            _("Apply preset \"{name}\"?\n\n"
+              "HU min = {huMin}, HU max = {huMax}\n"
+              "Stopping value = {stoppingValue} mm, Speed sigma = {speedSigma} HU\n\n"
+              "This will overwrite the current values.").format(name=name, **preset),
+            _("Apply Preset"),
+        )
+        if not ok:
+            # Revert combobox without triggering this handler again
+            self._applyingPreset = True
+            self.ui.presetComboBox.setCurrentIndex(
+                self.ui.presetComboBox.count - 1  # "Manual"
+            )
+            self._applyingPreset = False
+            return
+        self._applyingPreset = True
+        self.ui.huMinSpinBox.setValue(preset["huMin"])
+        self.ui.huMaxSpinBox.setValue(preset["huMax"])
+        self.ui.stoppingValueSpinBox.setValue(preset["stoppingValue"])
+        self.ui.speedSigmaSpinBox.setValue(preset["speedSigma"])
+        self._applyingPreset = False
+
+    def _onPresetSpinboxChanged(self, _value) -> None:
+        if self._applyingPreset:
+            return
+        # Switch to "Manual" without triggering onPresetChanged
+        self._applyingPreset = True
+        manual_index = self.ui.presetComboBox.count - 1
+        self.ui.presetComboBox.setCurrentIndex(manual_index)
+        self._applyingPreset = False
+
+    def onOpenDocumentationClicked(self, _value) -> None:
+        import webbrowser
+        from os import path
+
+        _locale = qt.QLocale().system().name()[3:]
+        filename = self.resourcePath(f"Docs/OrbitalVolumeWorkflowModule/orbita_volume_workflow_{_locale}.html")
+
+        if not os.path.exists(filename):
+            filename = self.resourcePath(f"Docs/OrbitalVolumeWorkflowModule/orbita_volume_workflow.html")
+        
+        webbrowser.open("file://" + filename)
+
+    def onPageCollapsibleClicked(self, sender: qt.QWidget, expanded: bool) -> None:
+        defaultPalette = slicer.app.palette()
+        self.ui.pageVolumeSegmentation.setChecked(False)
+        self.ui.pageVolumeSegmentation.setPalette(defaultPalette)
+        self.ui.pageOrbitalSurface.setChecked(False)
+        self.ui.pageOrbitalSurface.setPalette(defaultPalette)
+
+        if expanded:
+            self._parameterNode.currentStep = sender.objectName
+            sender.setChecked(True)
+
+            activePalette = slicer.app.palette()
+            activePalette.setColor(qt.QPalette.Button, qt.QColor("green"))
+            activePalette.setColor(qt.QPalette.ButtonText, qt.QColor("white"))
+            sender.setPalette(activePalette)
+
+            children = sender.findChildren(qt.QWidget)
+            for i in range(len(children)):
+                children[i].setPalette(defaultPalette)
+        else:
+            self._parameterNode.currentStep = ""
+
+    def _activateCurrentStep(self):
+        currentStep = self._parameterNode.currentStep
+        page_widget = self._findWidgetByName(currentStep)
+
+        if page_widget != None:
+            self.onPageCollapsibleClicked(page_widget, True)
+
+        
     # ------------------------------------------------------------------
     # Parameter-Node
     # ------------------------------------------------------------------
 
     def initializeParameterNode(self) -> None:
+        if self._parameterNode is not None:
+            # Re-entering after exit(): GUI was disconnected but observers and
+            # self._parameterNode are still intact — just reconnect the GUI.
+            wasBlocked = self.ui.ctVolumeSelector.blockSignals(True)
+            self.ui.ctVolumeSelector.setCurrentNode(self._parameterNode.ctVolume)
+            self.ui.ctVolumeSelector.blockSignals(wasBlocked)
+            self._parameterNodeGuiTag = self._parameterNode.connectGui(self.ui)
+            wasBlocked = self.ui.parameterNodeSelector.blockSignals(True)
+            self.ui.parameterNodeSelector.setCurrentNode(self._parameterNode.parameterNode)
+            self.ui.parameterNodeSelector.blockSignals(wasBlocked)
+            return
         pn = self.logic.getParameterNode()
         # Direkt setzen – nicht auf das Combo-Box-Signal warten (Box kann beim
         # ersten Start leer/inaktiv sein, bevor ein Node existiert).
@@ -288,6 +476,8 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
         # ---- Alten PN aufräumen ----
         if self._parameterNode is not None:
+            # Save current GUI values so they survive a PN switch
+            self._saveParamsForSide(self._parameterNode.sideIsLeft)
             old_id = self._parameterNode.parameterNode.GetID()
             # Per-PN-Zustand sichern
             self._statePerPN[old_id] = {
@@ -311,6 +501,10 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 if markup is not None and obs is not None:
                     markup.RemoveObserver(obs)
             self._posteriorMarkupObservers = {True: None, False: None}
+            cutoff_node = getattr(self._parameterNode, "posteriorCutoffNode", None)
+            if cutoff_node is not None and self._cutoffMarkupObserver is not None:
+                cutoff_node.RemoveObserver(self._cutoffMarkupObserver)
+            self._cutoffMarkupObserver = None
             self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
             self._parameterNodeGuiTag = None
 
@@ -368,7 +562,24 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             )
             self._posteriorMarkupObservers[isLeft_pm] = obs
 
+        # Observer an vorhandenen Cutoff-Markup-Node hängen + Selector synchronisieren
+        cutoff_node = getattr(self._parameterNode, "posteriorCutoffNode", None)
+        if cutoff_node is not None:
+            self._cutoffMarkupObserver = cutoff_node.AddObserver(
+                vtk.vtkCommand.ModifiedEvent,
+                lambda c, e: self._onCutoffMarkupModified(),
+            )
+        wasBlocked = self.ui.cutoffNodeSelector.blockSignals(True)
+        self.ui.cutoffNodeSelector.setCurrentNode(cutoff_node)
+        self.ui.cutoffNodeSelector.blockSignals(wasBlocked)
+        self._onCutoffMarkupModified()
+
+        # ctVolumeSelector: sync to new PN's volume; no signal blocking so that
+        # onCTVolumeChanged fires and the display updates correctly.
+        self.ui.ctVolumeSelector.setCurrentNode(self._parameterNode.ctVolume)
+
         self._parameterNodeGuiTag = self._parameterNode.connectGui(self.ui)
+
         isLeft = self._parameterNode.sideIsLeft
         self.ui.btnSideLeft.setChecked(isLeft)
         self.ui.btnSideRight.setChecked(not isLeft)
@@ -397,6 +608,19 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.curveSelector.setCurrentNode(self._curveNodes[isLeft])
         self.ui.curveSelector.blockSignals(False)
 
+        # refresh button palettes after side switch
+        btnActive = self.ui.btnSideLeft if isLeft else self.ui.btnSideRight
+        btnInactive = self.ui.btnSideRight if isLeft else self.ui.btnSideLeft
+
+        # inactive button uses default palette
+        btnInactive.setPalette(slicer.app.palette())
+        
+        # active buttons get's colourful highlight
+        paletteActive = slicer.app.palette()
+        paletteActive.setColor(qt.QPalette.Button, qt.QColor("green")) # green background
+        paletteActive.setColor(qt.QPalette.ButtonText, qt.QColor("white")) # white Text
+        btnActive.setPalette(paletteActive)
+
         self.ui.planeModelSelector.blockSignals(True)
         if self._parameterNode:
             plane = (self._parameterNode.planeModelLeft
@@ -404,9 +628,41 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             self.ui.planeModelSelector.setCurrentNode(plane)
         self.ui.planeModelSelector.blockSignals(False)
 
+        self.ui.segNodeSelector.blockSignals(True)
+        if self._parameterNode:
+            seg = (self._parameterNode.segmentationNodeLeft if isLeft
+                   else self._parameterNode.segmentationNodeRight)
+            self.ui.segNodeSelector.setCurrentNode(seg)
+        self.ui.segNodeSelector.blockSignals(False)
+
         self._loadParamsForSide(isLeft)
         self.ui.createSurfaceButton.setEnabled(self._curveNodes[isLeft] is not None)
         self.ui.surfaceResultLabel.setText(self._surfaceTexts[isLeft])
+
+        # Volumen nach Reload aus vorhandenem Segmentierungsknoten nachmessen
+        if not self._segTexts[isLeft] and self._parameterNode is not None:
+            seg_node = (self._parameterNode.segmentationNodeLeft if isLeft
+                        else self._parameterNode.segmentationNodeRight)
+            if seg_node is not None:
+                seg = seg_node.GetSegmentation()
+                seg_id = None
+                for i in range(seg.GetNumberOfSegments()):
+                    if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
+                        seg_id = seg.GetNthSegmentID(i)
+                        break
+                if seg_id is not None:
+                    try:
+                        vol_ml, voxel_count = self._calculateVolumeFromSegment(seg_node, seg_id)
+                        self._segVolumes[isLeft] = vol_ml
+                        self._segTexts[isLeft] = (
+                            _("<b>Intraorbital volume: {vol:.2f} ml</b>"
+                              " &nbsp;<i>(reloaded)</i><br>"
+                              "Voxels: {vox}").format(
+                                vol=vol_ml, vox=f"{voxel_count:,}")
+                        )
+                    except Exception:
+                        pass
+
         self.ui.segmentationResultLabel.setText(self._segTexts[isLeft])
 
     def _saveParamsForSide(self, isLeft: bool) -> None:
@@ -462,8 +718,14 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         contra_node = (self._parameterNode.segmentationNodeRight
                        if isLeft else self._parameterNode.segmentationNodeLeft)
         self.ui.rbSeedContralateral.setEnabled(contra_node is not None)
-        # Show/hide model-template row
-        is_model = (mode == 2)
+        # Show/hide mode-specific rows
+        is_contra = (mode == 1)
+        is_model  = (mode == 2)
+        self.ui.labelContraPosition.setVisible(is_contra)
+        self.ui.positionContralateralWidget.setVisible(is_contra)
+        self.ui.positionContralateralButton.setEnabled(
+            is_contra and contra_node is not None
+        )
         self.ui.labelModelSeed.setVisible(is_model)
         self.ui.modelSeedWidget.setVisible(is_model)
         # Restore model seed selector
@@ -472,6 +734,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.modelSeedSelector.setCurrentNode(model_seed)
         self.ui.modelSeedSelector.blockSignals(False)
         self.ui.positionModelButton.setEnabled(model_seed is not None)
+        self.ui.mirrorTemplateButton.setEnabled(model_seed is not None)
         remove_sat = self._parameterNode.__getattribute__(f"removeSatellites{s}")
         self.ui.removeSatellitesCheckBox.setChecked(remove_sat)
         self.ui.satelliteDiamSpinBox.setValue(       self._parameterNode.__getattribute__(f"satelliteDiam{s}"))
@@ -514,6 +777,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             disp.SetGlyphScale(3.0)
 
         self._curveNodes[isLeft] = curve_node
+        self._placeInFolder(curve_node, isLeft)
         self.ui.curveSelector.blockSignals(True)
         self.ui.curveSelector.setCurrentNode(curve_node)
         self.ui.curveSelector.blockSignals(False)
@@ -534,23 +798,42 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.toggleVolumeRenderingButton.setText(_("3D on") if not checked else _("3D off"))
 
     def onCTVolumeChanged(self, volume_node) -> None:
+        if self._parameterNode is not None:
+            self._parameterNode.ctVolume = volume_node
         if volume_node is None:
             return
         self._applyVolumeRendering(volume_node)
         self._centerViewAnterior(volume_node)
 
     def onHUShiftChanged(self, shift_hu: float) -> None:
+        """
+            Get's called when the user changes the HU-Shift. Shifts the 
+            Preset's values by the amount given
+        """
+
+        # get Display Node and Properties
         if self._vrDisplayNode is None:
             return
         volPropNode = self._vrDisplayNode.GetVolumePropertyNode()
         if volPropNode is None:
             return
-
+        
+        # get Preset values
         vrLogic = slicer.modules.volumerendering.logic()
         presetNode = vrLogic.GetPresetByName("CT-Bone")
         if presetNode is None:
             return
+        
+        presetTransferFunction = presetNode.GetScalarOpacity()
+        gradientOpacityTransferFunction = volPropNode.GetScalarOpacity()
+        
+        values = [0,0,0,0]
+        for i in range(gradientOpacityTransferFunction.GetSize()):
+            presetTransferFunction.GetNodeValue(i, values)
+            values[0] += shift_hu
+            gradientOpacityTransferFunction.SetNodeValue(i, values)
 
+        """"
         # Preset frisch kopieren, dann Shift anwenden
         volPropNode.Copy(presetNode)
         volProp = volPropNode.GetVolumeProperty()
@@ -578,10 +861,11 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             colFn.AddRGBPoint(v[0] + shift_hu, v[1], v[2], v[3], v[4], v[5])
 
         volPropNode.Modified()
+        """
 
     def _applyVolumeRendering(self, volume_node) -> None:
         from PSOILib import helperfunctions
-        helperfunctions.showVolumeRendering(volume_node, preset="CT-Bone")
+        #helperfunctions.showVolumeRendering(volume_node, preset="CT-Bone")
 
         # DisplayNode für den HU-Shift-Mechanismus referenzieren
         vrLogic = slicer.modules.volumerendering.logic()
@@ -641,12 +925,24 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         # For region-seed modes the FM starts from a large pre-computed volume,
         # so a much lower stopping value is sufficient.
         self.ui.stoppingValueSpinBox.setValue(15.0 if (is_contra or is_model) else 25.0)
-        # Show / hide the model-template row
+        # Show / hide mode-specific rows
+        self.ui.labelContraPosition.setVisible(is_contra)
+        
+        self.ui.positionContralateralWidget.setVisible(is_contra)
         self.ui.labelModelSeed.setVisible(is_model)
         self.ui.modelSeedWidget.setVisible(is_model)
+        # Enable "Position Mirrored" only when the contralateral segmentation exists
+        if is_contra and self._parameterNode is not None:
+            isLeft = self._parameterNode.sideIsLeft
+            contra_node = (self._parameterNode.segmentationNodeRight if isLeft
+                           else self._parameterNode.segmentationNodeLeft)
+            self.ui.positionContralateralButton.setEnabled(contra_node is not None)
+        else:
+            self.ui.positionContralateralButton.setEnabled(False)
 
     def onModelSeedChanged(self, node) -> None:
         self.ui.positionModelButton.setEnabled(node is not None)
+        self.ui.mirrorTemplateButton.setEnabled(node is not None)
         if self._parameterNode is None:
             return
         isLeft = self._parameterNode.sideIsLeft
@@ -654,6 +950,93 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             self._parameterNode.modelSeedNodeLeft  = node
         else:
             self._parameterNode.modelSeedNodeRight = node
+
+    def onMirrorTemplateToggled(self, checked: bool) -> None:
+        """Spiegelt das Template-Volumen entlang der Mediansagittalebene (X=0) und härtet
+        den Spiegelungs-Transform sofort, damit die Normalen korrekt bleiben.
+
+        Da eine Reflexion involutorisch ist (M² = I), ist das Vorgehen für Ein- und
+        Ausschalten identisch: den Mirror-Transform anwenden und härten.  T_centering
+        wird danach mit dem neuen Schwerpunkt des gehärteten Volumens aktualisiert.
+        """
+        if self._parameterNode is None:
+            return
+        isLeft      = self._parameterNode.sideIsLeft
+        seg_node    = self.ui.modelSeedSelector.currentNode()
+        if seg_node is None:
+            self.ui.mirrorTemplateButton.blockSignals(True)
+            self.ui.mirrorTemplateButton.setChecked(False)
+            self.ui.mirrorTemplateButton.blockSignals(False)
+            return
+
+        side_suffix    = "L" if isLeft else "R"
+        centering_name = f"ModelSeedCentering_{side_suffix}"
+        tf_attr        = "modelSeedTransformLeft" if isLeft else "modelSeedTransformRight"
+        transform_node = getattr(self._parameterNode, tf_attr, None)
+
+        centering_node = slicer.mrmlScene.GetFirstNodeByName(centering_name)
+        if centering_node is None:
+            slicer.util.warningDisplay(_("Please click 'Position Model' first."))
+            self.ui.mirrorTemplateButton.blockSignals(True)
+            self.ui.mirrorTemplateButton.setChecked(False)
+            self.ui.mirrorTemplateButton.blockSignals(False)
+            return
+
+        # ── Segment aus der Positionierungs-Kette lösen ────────────────────
+        seg_node.SetAndObserveTransformNodeID(None)
+
+        # ── Reflexionsmatrix X → −X anwenden und sofort härten ─────────────
+        tmp_mirror = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLLinearTransformNode", "_TmpMirrorHarden"
+        )
+        mat_m = vtk.vtkMatrix4x4()
+        mat_m.Identity()
+        mat_m.SetElement(0, 0, -1.0)
+        tmp_mirror.SetMatrixTransformToParent(mat_m)
+        seg_node.SetAndObserveTransformNodeID(tmp_mirror.GetID())
+        slicer.modules.transforms.logic().hardenTransform(seg_node)
+        slicer.mrmlScene.RemoveNode(tmp_mirror)
+
+        # ── Neuen Schwerpunkt nach dem Härten bestimmen ─────────────────────
+        seg_bounds = [0.0] * 6
+        seg_node.GetRASBounds(seg_bounds)
+        if seg_bounds[0] < seg_bounds[1]:
+            seg_center = np.array([
+                (seg_bounds[0] + seg_bounds[1]) / 2,
+                (seg_bounds[2] + seg_bounds[3]) / 2,
+                (seg_bounds[4] + seg_bounds[5]) / 2,
+            ])
+        else:
+            seg_center = np.zeros(3)
+
+        # ── T_centering mit neuem Schwerpunkt aktualisieren ─────────────────
+        mat_c = vtk.vtkMatrix4x4()
+        mat_c.Identity()
+        mat_c.SetElement(0, 3, float(-seg_center[0]))
+        mat_c.SetElement(1, 3, float(-seg_center[1]))
+        mat_c.SetElement(2, 3, float(-seg_center[2]))
+        centering_node.SetMatrixTransformToParent(mat_c)
+
+        # ── Hierarchie wiederherstellen: seg → T_centering → T_main ─────────
+        centering_node.SetAndObserveTransformNodeID(
+            transform_node.GetID() if transform_node else None
+        )
+        seg_node.SetAndObserveTransformNodeID(centering_node.GetID())
+
+    def onLoadTemplateButton(self) -> None:
+        path = qt.QFileDialog.getOpenFileName(
+            slicer.util.mainWindow(),
+            _("Load template segmentation"),
+            "",
+            "Segmentation files (*.seg.nrrd *.nrrd *.nii *.nii.gz);;All files (*)",
+        )
+        if not path:
+            return
+        node = slicer.util.loadSegmentation(path)
+        if node is None:
+            slicer.util.errorDisplay(_("Could not load segmentation from file."))
+            return
+        self.ui.modelSeedSelector.setCurrentNode(node)
 
     def onPositionModelButton(self) -> None:
         if self._parameterNode is None:
@@ -665,51 +1048,453 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             slicer.util.warningDisplay(_("Please select a template segmentation first."))
             return
 
+        side_suffix = "L" if isLeft else "R"
+
+        # ── Haupttransform (sichtbar, interaktiv) ──────────────────────────
         tf_attr = "modelSeedTransformLeft" if isLeft else "modelSeedTransformRight"
         existing_tf = getattr(self._parameterNode, tf_attr, None)
-
         if existing_tf is not None and slicer.mrmlScene.IsNodePresent(existing_tf):
             transform_node = existing_tf
         else:
-            side_suffix = "L" if isLeft else "R"
             transform_node = slicer.mrmlScene.AddNewNodeByClass(
                 "vtkMRMLLinearTransformNode", f"ModelSeedTransform_{side_suffix}"
             )
             transform_node.CreateDefaultDisplayNodes()
             setattr(self._parameterNode, tf_attr, transform_node)
+        self._placeInFolder(transform_node, isLeft)
 
-        # Place the transform's origin at the orbital rim centroid (user sees handles there)
+        # ── Zentrierungs-Transform (unsichtbar, Kind von T_main) ────────────
+        centering_name = f"ModelSeedCentering_{side_suffix}"
+        centering_node = slicer.mrmlScene.GetFirstNodeByName(centering_name)
+        if centering_node is None:
+            centering_node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLLinearTransformNode", centering_name
+            )
+            centering_node.CreateDefaultDisplayNodes()
+        self._placeInFolder(centering_node, isLeft)
+
+        # ── Zielposition: Orbital-Ebenen-Centroid + 20 mm posterior ─────────
         plane = (self._parameterNode.planeModelLeft if isLeft
                  else self._parameterNode.planeModelRight)
         if plane is not None:
-            centroid, _ = self.logic._getPlaneFromModel(plane)
+            centroid, normal = self.logic._getPlaneFromModel(plane)
+            if volume_node is not None:
+                posterior = self.logic._ensurePosteriorDirection(normal, centroid, volume_node)
+            else:
+                posterior = normal
+            target = centroid + 20.0 * posterior
         elif volume_node is not None:
             bounds = [0.0] * 6
             volume_node.GetRASBounds(bounds)
             centroid = np.array([(bounds[0]+bounds[1])/2,
                                   (bounds[2]+bounds[3])/2,
                                   (bounds[4]+bounds[5])/2])
+            target = centroid
         else:
-            centroid = np.zeros(3)
+            target = np.zeros(3)
 
-        mat = vtk.vtkMatrix4x4()
-        mat.Identity()
-        mat.SetElement(0, 3, float(centroid[0]))
-        mat.SetElement(1, 3, float(centroid[1]))
-        mat.SetElement(2, 3, float(centroid[2]))
-        transform_node.SetMatrixTransformToParent(mat)
+        # ── Natürlichen Mittelpunkt der Template-Segmentierung bestimmen ─────
+        # Zuerst alle Transforms lösen, damit GetRASBounds unkompensierte Koordinaten liefert.
+        seg_node.SetAndObserveTransformNodeID(None)
+        seg_bounds = [0.0] * 6
+        seg_node.GetRASBounds(seg_bounds)
+        if seg_bounds[0] < seg_bounds[1]:   # gültige Bounds
+            seg_center = np.array([
+                (seg_bounds[0] + seg_bounds[1]) / 2,
+                (seg_bounds[2] + seg_bounds[3]) / 2,
+                (seg_bounds[4] + seg_bounds[5]) / 2,
+            ])
+        else:
+            seg_center = np.zeros(3)
 
-        # Apply the transform to the template – user can now drag it into position
-        seg_node.SetAndObserveTransformNodeID(transform_node.GetID())
+        # ── Zwei-Transform-Hierarchie aufbauen ───────────────────────────────
+        # T_centering: [I | -seg_center]  →  verschiebt Template-Mittelpunkt auf Ursprung
+        mat_c = vtk.vtkMatrix4x4()
+        mat_c.Identity()
+        mat_c.SetElement(0, 3, float(-seg_center[0]))
+        mat_c.SetElement(1, 3, float(-seg_center[1]))
+        mat_c.SetElement(2, 3, float(-seg_center[2]))
+        centering_node.SetMatrixTransformToParent(mat_c)
 
-        # Show interaction handles (translation + rotation; no scaling needed)
+        # T_main: [I | target]  →  Translations-Vektor = Zielposition = Center of Transformation
+        mat_m = vtk.vtkMatrix4x4()
+        mat_m.Identity()
+        mat_m.SetElement(0, 3, float(target[0]))
+        mat_m.SetElement(1, 3, float(target[1]))
+        mat_m.SetElement(2, 3, float(target[2]))
+        transform_node.SetMatrixTransformToParent(mat_m)
+
+        # Hierarchie: seg_node → T_centering → T_main
+        centering_node.SetAndObserveTransformNodeID(transform_node.GetID())
+        seg_node.SetAndObserveTransformNodeID(centering_node.GetID())
+
+        # T_centering unsichtbar (keine Handles)
+        c_disp = centering_node.GetDisplayNode()
+        if c_disp:
+            c_disp.SetEditorVisibility(False)
+
+        # T_main: Handles nur in 2D-Slice-Views
         disp = transform_node.GetDisplayNode()
         disp.SetEditorVisibility(True)
-        disp.SetEditorTranslationEnabled(True)
-        disp.SetEditorRotationEnabled(True)
+        # 3D-Handles explizit deaktivieren (Slicer-Default wäre True)
+        disp.SetEditorTranslationEnabled(False)
+        disp.SetEditorRotationEnabled(False)
         disp.SetEditorScalingEnabled(False)
+        # 2D-Slice-Handles aktivieren
+        disp.SetEditorTranslationSliceEnabled(True)
+        disp.SetEditorRotationSliceEnabled(True)
+        disp.SetEditorScalingSliceEnabled(True)
+        disp.SetScaleHandleComponentVisibilitySlice([True, True, True, False])
+        disp.SetTranslationHandleComponentVisibilitySlice([True, True, True, True])
 
         slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
+
+    def onPositionContralateralButton(self) -> None:
+        """Spiegelt das kontralaterale Segment und positioniert die Spiegelung
+        mit interaktiven 2D-Handles – analog zu onPositionModelButton().
+
+        Das erzeugte 'ContraPositioned_{s}'-Segment wird beim nächsten Klick
+        auf 'Segment Volume' (Modus 1) statt der automatischen Spiegelung als
+        FM-Seed verwendet.
+        """
+        if self._parameterNode is None:
+            return
+        isLeft  = self._parameterNode.sideIsLeft
+        s       = "Left" if isLeft else "Right"
+        side_suffix = "L" if isLeft else "R"
+
+        contra_node = (self._parameterNode.segmentationNodeRight if isLeft
+                       else self._parameterNode.segmentationNodeLeft)
+        if contra_node is None:
+            slicer.util.warningDisplay(_("Bitte zuerst die Gegenseite segmentieren."))
+            return
+
+        # Gegenseiten-Segment-ID ermitteln
+        contra_side  = not isLeft
+        contra_seg_id = self._segIds.get(contra_side)
+        if contra_seg_id is None:
+            seg = contra_node.GetSegmentation()
+            for i in range(seg.GetNumberOfSegments()):
+                if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
+                    contra_seg_id = seg.GetNthSegmentID(i)
+                    break
+        if contra_seg_id is None:
+            slicer.util.warningDisplay(
+                _("Kein IntraorbitalVolume-Segment auf der Gegenseite gefunden.")
+            )
+            return
+
+        volume_node = self.ui.ctVolumeSelector.currentNode()
+
+        import SimpleITK as sitk
+        import sitkUtils
+
+        # Gegenseiten-Segment in Labelmap exportieren und spiegeln (L-R)
+        seg_id_arr = vtk.vtkStringArray()
+        seg_id_arr.InsertNextValue(contra_seg_id)
+        tmp_lm = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLLabelMapVolumeNode", "_TmpContraLM_Pos"
+        )
+        try:
+            slicer.modules.segmentations.logic().ExportSegmentsToLabelmapNode(
+                contra_node, seg_id_arr, tmp_lm, volume_node
+            )
+            contra_sitk = sitkUtils.PullVolumeFromSlicer(tmp_lm)
+        finally:
+            slicer.mrmlScene.RemoveNode(tmp_lm)
+
+        contra_arr = sitk.GetArrayFromImage(contra_sitk)
+        mirrored = np.ascontiguousarray(np.flip(contra_arr, axis=2))
+        mirrored_sitk = sitk.GetImageFromArray(mirrored)
+        mirrored_sitk.CopyInformation(contra_sitk)
+
+        # Positionier-Node anlegen oder wiederverwenden
+        pos_node_attr = f"contraPositionedNode{s}"
+        existing_pos  = getattr(self._parameterNode, pos_node_attr, None)
+        if existing_pos is not None and slicer.mrmlScene.IsNodePresent(existing_pos):
+            existing_pos.SetAndObserveTransformNodeID(None)
+            existing_pos.GetSegmentation().RemoveAllSegments()
+            pos_node = existing_pos
+        else:
+            pos_node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLSegmentationNode", f"ContraPositioned_{side_suffix}"
+            )
+            pos_node.CreateDefaultDisplayNodes()
+            if volume_node:
+                pos_node.SetReferenceImageGeometryParameterFromVolumeNode(volume_node)
+            setattr(self._parameterNode, pos_node_attr, pos_node)
+        self._placeInFolder(pos_node, isLeft)
+
+        # Gespiegelte Maske importieren
+        lm_tmp = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLLabelMapVolumeNode", "_TmpMirroredLM"
+        )
+        sitkUtils.PushVolumeToSlicer(mirrored_sitk, lm_tmp)
+        try:
+            slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(
+                lm_tmp, pos_node
+            )
+        finally:
+            slicer.mrmlScene.RemoveNode(lm_tmp)
+
+        # Darstellung: blau, halbtransparent
+        disp_seg = pos_node.GetDisplayNode()
+        if disp_seg:
+            disp_seg.SetOpacity3D(0.4)
+            disp_seg.SetOpacity2DFill(0.3)
+        pos_seg = pos_node.GetSegmentation()
+        if pos_seg.GetNumberOfSegments() > 0:
+            pos_seg.GetNthSegment(0).SetColor(0.2, 0.6, 1.0)
+
+        # ── Haupt-Transform (interaktiv) ──────────────────────────────────
+        tf_attr    = f"contraPositionedTransform{s}"
+        existing_tf = getattr(self._parameterNode, tf_attr, None)
+        if existing_tf is not None and slicer.mrmlScene.IsNodePresent(existing_tf):
+            transform_node = existing_tf
+        else:
+            transform_node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLLinearTransformNode", f"ContraPositionedTransform_{side_suffix}"
+            )
+            transform_node.CreateDefaultDisplayNodes()
+            setattr(self._parameterNode, tf_attr, transform_node)
+        self._placeInFolder(transform_node, isLeft)
+
+        # ── Zentrierungs-Transform (unsichtbar) ───────────────────────────
+        centering_name = f"ContraPositionedCentering_{side_suffix}"
+        centering_node = slicer.mrmlScene.GetFirstNodeByName(centering_name)
+        if centering_node is None:
+            centering_node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLLinearTransformNode", centering_name
+            )
+            centering_node.CreateDefaultDisplayNodes()
+        self._placeInFolder(centering_node, isLeft)
+
+        # ── Zielposition: Orbital-Ebenen-Centroid + 20 mm posterior ───────
+        plane = (self._parameterNode.planeModelLeft if isLeft
+                 else self._parameterNode.planeModelRight)
+        if plane is not None:
+            centroid, normal = self.logic._getPlaneFromModel(plane)
+            if volume_node is not None:
+                posterior = self.logic._ensurePosteriorDirection(normal, centroid, volume_node)
+            else:
+                posterior = normal
+            target = centroid + 20.0 * posterior
+        elif volume_node is not None:
+            bounds = [0.0] * 6
+            volume_node.GetRASBounds(bounds)
+            target = np.array([
+                (bounds[0]+bounds[1])/2,
+                (bounds[2]+bounds[3])/2,
+                (bounds[4]+bounds[5])/2,
+            ])
+        else:
+            target = np.zeros(3)
+
+        # Mittelpunkt des gespiegelten Segments
+        seg_bounds = [0.0] * 6
+        pos_node.GetRASBounds(seg_bounds)
+        if seg_bounds[0] < seg_bounds[1]:
+            seg_center = np.array([
+                (seg_bounds[0]+seg_bounds[1])/2,
+                (seg_bounds[2]+seg_bounds[3])/2,
+                (seg_bounds[4]+seg_bounds[5])/2,
+            ])
+        else:
+            seg_center = np.zeros(3)
+
+        # ── Zwei-Transform-Hierarchie ──────────────────────────────────────
+        mat_c = vtk.vtkMatrix4x4()
+        mat_c.Identity()
+        mat_c.SetElement(0, 3, float(-seg_center[0]))
+        mat_c.SetElement(1, 3, float(-seg_center[1]))
+        mat_c.SetElement(2, 3, float(-seg_center[2]))
+        centering_node.SetMatrixTransformToParent(mat_c)
+
+        mat_m = vtk.vtkMatrix4x4()
+        mat_m.Identity()
+        mat_m.SetElement(0, 3, float(target[0]))
+        mat_m.SetElement(1, 3, float(target[1]))
+        mat_m.SetElement(2, 3, float(target[2]))
+        transform_node.SetMatrixTransformToParent(mat_m)
+
+        centering_node.SetAndObserveTransformNodeID(transform_node.GetID())
+        pos_node.SetAndObserveTransformNodeID(centering_node.GetID())
+
+        # T_centering unsichtbar (keine Handles)
+        c_disp = centering_node.GetDisplayNode()
+        if c_disp:
+            c_disp.SetEditorVisibility(False)
+
+        # T_main: Handles nur in 2D-Slice-Views
+        disp = transform_node.GetDisplayNode()
+        disp.SetEditorVisibility(True)
+        disp.SetEditorTranslationEnabled(False)
+        disp.SetEditorRotationEnabled(False)
+        disp.SetEditorScalingEnabled(False)
+        disp.SetEditorTranslationSliceEnabled(True)
+        disp.SetEditorRotationSliceEnabled(True)
+        disp.SetEditorScalingSliceEnabled(True)
+        disp.SetScaleHandleComponentVisibilitySlice([True, True, True, False])
+        disp.SetTranslationHandleComponentVisibilitySlice([True, True, True, True])
+
+        slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
+
+    def onExportResultsButton(self) -> None:
+        """Exportiert Segmentierungsparameter und -ergebnisse beider Seiten als Excel-Datei
+        in das Verzeichnis des CT-Volumes (results_orbital_volume.xlsx)."""
+        import os
+
+        if self._parameterNode is None:
+            slicer.util.warningDisplay(_("No parameter node active."))
+            return
+
+        try:
+            import openpyxl
+        except ImportError:
+            slicer.util.pip_install("openpyxl")
+            import openpyxl
+
+        
+
+        # Zielverzeichnis aus dem CT-Volume ableiten
+        volume_node = self._parameterNode.ctVolume
+        ct_dir = None
+        if volume_node:
+            sn = volume_node.GetStorageNode()
+            if sn and sn.GetFileName():
+                ct_dir = os.path.dirname(sn.GetFileName())
+        if not ct_dir:
+            ct_dir = qt.QFileDialog.getExistingDirectory(
+                slicer.util.mainWindow(), _("Select output directory")
+            )
+            if not ct_dir:
+                return
+
+        excel_path = os.path.join(ct_dir, "results_orbital_volume.xlsx")
+
+        # Collect all module PNs now (needed for deletion logic below too)
+        all_pn_nodes = []
+        _col = slicer.mrmlScene.GetNodesByClass("vtkMRMLScriptedModuleNode")
+        _col.InitTraversal()
+        _node = _col.GetNextItemAsObject()
+        while _node:
+            if _node.GetAttribute("ModuleName") == self.moduleName:
+                all_pn_nodes.append(_node)
+            _node = _col.GetNextItemAsObject()
+        export_pn_names = {(n.GetName() or "–") for n in all_pn_nodes}
+
+        # Existierende Datei laden oder neu erstellen
+        if os.path.exists(excel_path):
+            wb = openpyxl.load_workbook(excel_path)
+            ws = wb.active
+            # Vorhandene Zeilen für alle zu exportierenden PNs entfernen (Update-Semantik)
+            rows_to_delete = [
+                row_idx for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2)
+                if row[0] in export_pn_names  # Spalte "Parameter-Node"
+            ]
+            for row_idx in reversed(rows_to_delete):
+                ws.delete_rows(row_idx)
+        else:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Intraorbital Volume"
+            headers = [
+                "Parameter-Node", "CT-Volume", "Seite", "Seed-Modus",
+                "HU Min", "HU Max",
+                "Stopping Value (FM Limit)", "Speed Sigma (σ)",
+                "Posteriorer Boost", "Satelliten entfernen",
+                "Min. Satelliten-Ø (mm)", "Intraorbitalvolumen (ml)",
+                "Gegenseite / Seite",
+            ]
+            ws.append(headers)
+            # Spaltenbreiten
+            for col, width in enumerate([28, 22, 8, 24, 8, 8, 24, 16, 18, 22, 22, 24, 18], start=1):
+                ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
+
+        seed_mode_labels = {0: "Manuell", 1: "Gegenseite gespiegelt", 2: "Modellbasiert"}
+
+        for raw_pn in all_pn_nodes:
+            pn = OrbitalVolumeWorkflowModuleParameterNode(raw_pn)
+            pn_name = raw_pn.GetName() if raw_pn.GetName() else "–"
+
+            # CT volume and output directory
+            pn_vol_node = pn.ctVolume
+            pn_ct_name = pn_vol_node.GetName() if pn_vol_node else "–"
+
+            # Compute volumes for both sides
+            vols = {}
+            for isLeft in [True, False]:
+                seg_node = (pn.segmentationNodeLeft if isLeft else pn.segmentationNodeRight)
+                if seg_node is None:
+                    vols[isLeft] = None
+                    continue
+                # Use cached value if this is the active PN
+                vol = None
+                if (pn.parameterNode is self._parameterNode.parameterNode):
+                    vol = self._segVolumes.get(isLeft)
+                if vol is None:
+                    seg = seg_node.GetSegmentation()
+                    if seg.GetNumberOfSegments() > 0:
+                        seg_id = seg.GetNthSegmentID(0)
+                        vol, _voxels = self._calculateVolumeFromSegment(seg_node, seg_id)
+                vols[isLeft] = vol
+
+            for isLeft in [True, False]:
+                seg_node = (pn.segmentationNodeLeft if isLeft else pn.segmentationNodeRight)
+                if seg_node is None:
+                    continue
+
+                s = "Left" if isLeft else "Right"
+                vol_ml    = vols[isLeft]
+                other_vol = vols[not isLeft]
+
+                if vol_ml and other_vol and vol_ml > 0:
+                    ratio = vol_ml / other_vol
+                else:
+                    ratio = None
+
+                row = [
+                    pn_name,
+                    pn_ct_name,
+                    "Links" if isLeft else "Rechts",
+                    seed_mode_labels.get(pn.__getattribute__(f"seedMode{s}"), "–"),
+                    pn.__getattribute__(f"huMin{s}"),
+                    pn.__getattribute__(f"huMax{s}"),
+                    pn.__getattribute__(f"stoppingValue{s}"),
+                    pn.__getattribute__(f"speedSigma{s}"),
+                    pn.__getattribute__(f"posteriorBoost{s}"),
+                    "Ja" if pn.__getattribute__(f"removeSatellites{s}") else "Nein",
+                    pn.__getattribute__(f"satelliteDiam{s}"),
+                    round(vol_ml, 3) if vol_ml is not None else "–",
+                    ratio if ratio is not None else "–",
+                ]
+                ws.append(row)
+
+                if ratio is not None:
+                    ws.cell(row=ws.max_row, column=13).number_format = "0.0%"
+
+        from openpyxl.styles import Font, Color, Border, Side
+
+        # Allen Zellen die Schriftfarbe "auto" zuweisen, damit es auch im Dark mode
+        # richtig dargestellt wird
+        cell_font = Font(name="Liberations Sans", color=Color(auto=True))
+        for row in ws.iter_rows(min_row=2):
+            for cell in row:
+                cell.font = cell_font
+
+        # Titelzeile fett darstellen
+        header_font = Font(name="Liberations Sans", color=Color(auto=True), bold=True)
+        header_border = Border(bottom=Side(border_style="thin",color=Color(auto=True)))   
+
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.border = header_border
+
+        # Ergebnis epeichern
+        wb.save(excel_path)
+        slicer.util.infoDisplay(
+            _("Results saved to:\n{path}").format(path=excel_path)
+        )
 
     def onCreateSurfaceButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Error creating the orbital plane."), waitCursor=True):
@@ -742,6 +1527,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 self._parameterNode.planeModelLeft = model_node
             else:
                 self._parameterNode.planeModelRight = model_node
+            self._placeInFolder(model_node, isLeft)
 
             self.ui.planeModelSelector.blockSignals(True)
             self.ui.planeModelSelector.setCurrentNode(model_node)
@@ -771,30 +1557,49 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             existing_seed = (self._parameterNode.seedNodeLeft
                              if isLeft else self._parameterNode.seedNodeRight)
 
+            # Bestehende Nodes nur wiederverwenden wenn sie zum aktuellen CT gehören.
+            # Bei neuem ParameterNode oder gewechseltem CT-Volume neue Nodes anlegen.
+            ct_prefix = volume_node.GetName()
+            if existing_seg is not None and ct_prefix not in existing_seg.GetName():
+                existing_seg  = None
+                existing_seed = None
+
             # --- Seed-Modus bestimmen ---
             seed_mode = (1 if self.ui.rbSeedContralateral.isChecked()
                          else 2 if self.ui.rbSeedModelBased.isChecked() else 0)
 
-            # Modus 1: Gegenseite spiegeln
+            # Modus 1: Gegenseite spiegeln (ggf. mit manuell positioniertem Spiegel-Segment)
             contra_seg_node = None
             contra_seg_id   = None
-            if seed_mode == 1:
-                contra_node = (self._parameterNode.segmentationNodeRight
-                               if isLeft else self._parameterNode.segmentationNodeLeft)
-                contra_side = not isLeft
-                if contra_node is not None:
-                    contra_seg_node = contra_node
-                    contra_seg_id   = self._segIds.get(contra_side)
-                    if contra_seg_id is None:
-                        seg = contra_node.GetSegmentation()
-                        for i in range(seg.GetNumberOfSegments()):
-                            if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
-                                contra_seg_id = seg.GetNthSegmentID(i)
-                                break
-
-            # Modus 2: Modell-basierter Seed
             model_seed_node = None
             model_seed_id   = None
+            if seed_mode == 1:
+                s = "Left" if isLeft else "Right"
+                pos_node = getattr(self._parameterNode, f"contraPositionedNode{s}", None)
+                pos_tf   = getattr(self._parameterNode, f"contraPositionedTransform{s}", None)
+                if (pos_node is not None and slicer.mrmlScene.IsNodePresent(pos_node)
+                        and pos_tf is not None and slicer.mrmlScene.IsNodePresent(pos_tf)):
+                    # Verwende das manuell positionierte Spiegel-Segment als FM-Seed
+                    model_seed_node = pos_node
+                    pos_seg = pos_node.GetSegmentation()
+                    if pos_seg.GetNumberOfSegments() > 0:
+                        model_seed_id = pos_seg.GetNthSegmentID(0)
+                else:
+                    # Automatische Spiegelung (Standard-Pfad)
+                    contra_node = (self._parameterNode.segmentationNodeRight
+                                   if isLeft else self._parameterNode.segmentationNodeLeft)
+                    contra_side = not isLeft
+                    if contra_node is not None:
+                        contra_seg_node = contra_node
+                        contra_seg_id   = self._segIds.get(contra_side)
+                        if contra_seg_id is None:
+                            seg = contra_node.GetSegmentation()
+                            for i in range(seg.GetNumberOfSegments()):
+                                if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
+                                    contra_seg_id = seg.GetNthSegmentID(i)
+                                    break
+
+            # Modus 2: Modell-basierter Seed
             if seed_mode == 2:
                 model_seed_node = (self._parameterNode.modelSeedNodeLeft if isLeft
                                    else self._parameterNode.modelSeedNodeRight)
@@ -802,6 +1607,17 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                     seg = model_seed_node.GetSegmentation()
                     if seg.GetNumberOfSegments() > 0:
                         model_seed_id = seg.GetNthSegmentID(0)
+
+            # Posteriore Cutoff-Ebene (gemeinsam für beide Seiten)
+            cutoff_node = self._parameterNode.posteriorCutoffNode
+            if cutoff_node is None or cutoff_node.GetNumberOfControlPoints() == 0:
+                raise ValueError(
+                    _("Bitte zuerst einen posterioren Cutoff-Punkt setzen "
+                      "(Schaltfläche 'P' im Abschnitt 'Posteriore Cutoff-Ebene').")
+                )
+            _cutoff_pt = [0.0, 0.0, 0.0]
+            cutoff_node.GetNthControlPointPositionWorld(0, _cutoff_pt)
+            posterior_cutoff_ras = np.array(_cutoff_pt)
 
             result = self.logic.segmentIntraorbitalVolume(
                 volume_node=volume_node,
@@ -819,6 +1635,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 existing_seed_node=existing_seed,
                 contralateral_seg_node=contra_seg_node,
                 contralateral_seg_id=contra_seg_id,
+                posterior_cutoff_ras=posterior_cutoff_ras,
                 model_seed_node=model_seed_node,
                 model_seed_id=model_seed_id,
                 remove_satellites=self.ui.removeSatellitesCheckBox.isChecked(),
@@ -831,14 +1648,32 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             else:
                 self._parameterNode.segmentationNodeRight = result["segmentation_node"]
                 self._parameterNode.seedNodeRight         = result["seed_node"]
+            # Place result nodes and any preview nodes in the side folder
+            self._placeInFolder(result["segmentation_node"], isLeft)
+            self._placeInFolder(result["seed_node"], isLeft)
+            _seg_prefix = result["segmentation_node"].GetName().replace("_IntraorbitalSeg", "") + "_"
+            for _pname in [f"{_seg_prefix}ContraMirror_Full", f"{_seg_prefix}ModelSeed"]:
+                _pnode = slicer.mrmlScene.GetFirstNodeByName(_pname)
+                if _pnode is not None:
+                    self._placeInFolder(_pnode, isLeft)
+            # Keep the manual selector in sync
+            wasBlocked = self.ui.segNodeSelector.blockSignals(True)
+            self.ui.segNodeSelector.setCurrentNode(result["segmentation_node"])
+            self.ui.segNodeSelector.blockSignals(wasBlocked)
+            # Finales Volumen aus dem fertigen Segment messen (nach Smoothing + Satellitenentfernung)
+            seg_node_final = result["segmentation_node"]
+            seg_id_final   = result["segment_id"]
+            final_vol_ml, final_vox = self._calculateVolumeFromSegment(seg_node_final, seg_id_final)
+
+            self._segVolumes[isLeft] = final_vol_ml
 
             text = (
                 _("<b>Intraorbital volume: {vol:.2f} ml</b><br>"
                   "Voxels: {vox}<br>"
                   "Seed offset: {off:.1f} mm &nbsp;|&nbsp; "
                   "HU at seed: {hu:.0f}").format(
-                    vol=result['volume_ml'],
-                    vox=f"{result['voxel_count']:,}",
+                    vol=final_vol_ml,
+                    vox=f"{final_vox:,}",
                     off=result['offset_mm'],
                     hu=result['hu_at_seed'],
                 )
@@ -874,6 +1709,22 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                     cameraNode.ResetClippingRange()
                     threeDView.forceRender()
 
+            # Interaction Handles des Modell-Seed-Transforms ausblenden
+            tf_attr = "modelSeedTransformLeft" if isLeft else "modelSeedTransformRight"
+            model_tf = getattr(self._parameterNode, tf_attr, None)
+            if model_tf is not None and slicer.mrmlScene.IsNodePresent(model_tf):
+                disp = model_tf.GetDisplayNode()
+                if disp:
+                    disp.SetEditorVisibility(False)
+
+            # Interaction Handles des Contralateral-Positionierungs-Transforms ausblenden
+            s = "Left" if isLeft else "Right"
+            contra_pos_tf = getattr(self._parameterNode, f"contraPositionedTransform{s}", None)
+            if contra_pos_tf is not None and slicer.mrmlScene.IsNodePresent(contra_pos_tf):
+                disp = contra_pos_tf.GetDisplayNode()
+                if disp:
+                    disp.SetEditorVisibility(False)
+
             # Volume-Rendering ausblenden
             if self._vrDisplayNode is not None:
                 self._vrDisplayNode.SetVisibility(False)
@@ -898,8 +1749,119 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             self.ui.openSegmentEditorButton.setEnabled(True)
 
     def _nextStep(self) -> None:
-        if self.ui.stepsToolbox.currentIndex < self.ui.stepsToolbox.count - 1:
-            self.ui.stepsToolbox.setCurrentIndex(self.ui.stepsToolbox.currentIndex + 1)
+        # if self.ui.stepsToolbox.currentIndex < self.ui.stepsToolbox.count - 1:
+        #     self.ui.stepsToolbox.setCurrentIndex(self.ui.stepsToolbox.currentIndex + 1)
+        return
+
+    def onClearSideButton(self) -> None:
+        """Löscht alle Segmentierungs-Nodes der aktuell gewählten Seite nach Bestätigung."""
+        if self._parameterNode is None:
+            return
+        isLeft = self._parameterNode.sideIsLeft
+        side_name = "Links" if isLeft else "Rechts"
+        s = "Left" if isLeft else "Right"
+        side_suffix = "L" if isLeft else "R"
+
+        answer = qt.QMessageBox.question(
+            slicer.util.mainWindow(),
+            _("Segmentierung löschen"),
+            _("Alle Segmentierungs-Nodes für Seite {side} wirklich löschen?\n"
+              "(Seed, Transforms, Segmentierung, Preview-Nodes)").format(side=side_name),
+            qt.QMessageBox.Yes | qt.QMessageBox.No,
+            qt.QMessageBox.No,
+        )
+        if answer != qt.QMessageBox.Yes:
+            return
+
+        def _remove(node):
+            if node is not None and slicer.mrmlScene.IsNodePresent(node):
+                slicer.mrmlScene.RemoveNode(node)
+
+        # Segmentierung + abgeleitete Preview-Nodes (benannte Hilfsknoten vom FM)
+        seg_node = getattr(self._parameterNode, f"segmentationNode{s}", None)
+        if seg_node is not None:
+            prefix = seg_node.GetName().replace("_IntraorbitalSeg", "") + "_"
+            for preview_name in [
+                f"{prefix}ContraMirror_Full",
+                f"{prefix}ContraMirror_Shrunk",
+                f"{prefix}ModelSeed_full",
+                f"{prefix}ModelSeed",
+            ]:
+                _remove(slicer.mrmlScene.GetFirstNodeByName(preview_name))
+        _remove(seg_node)
+        setattr(self._parameterNode, f"segmentationNode{s}", None)
+
+        # Seed-Fiducial
+        _remove(getattr(self._parameterNode, f"seedNode{s}", None))
+        setattr(self._parameterNode, f"seedNode{s}", None)
+
+        # Modell-Seed + Transform-Kette (Centering + Haupt-Transform)
+        model_seg = getattr(self._parameterNode, f"modelSeedNode{s}", None)
+        if model_seg is not None and slicer.mrmlScene.IsNodePresent(model_seg):
+            centering_id = model_seg.GetTransformNodeID()
+            if centering_id:
+                centering_node = slicer.mrmlScene.GetNodeByID(centering_id)
+                model_tf = getattr(self._parameterNode, f"modelSeedTransform{s}", None)
+                if centering_node and centering_node != model_tf:
+                    _remove(centering_node)
+        _remove(model_seg)
+        setattr(self._parameterNode, f"modelSeedNode{s}", None)
+
+        model_tf = getattr(self._parameterNode, f"modelSeedTransform{s}", None)
+        _remove(model_tf)
+        setattr(self._parameterNode, f"modelSeedTransform{s}", None)
+
+        # Centering-Transform (Fallback, falls noch vorhanden)
+        _remove(slicer.mrmlScene.GetFirstNodeByName(f"ModelSeedCentering_{side_suffix}"))
+
+        # Positioniertes Gegenseiten-Segment + Transform-Kette
+        contra_pos_node = getattr(self._parameterNode, f"contraPositionedNode{s}", None)
+        if contra_pos_node is not None and slicer.mrmlScene.IsNodePresent(contra_pos_node):
+            centering_id = contra_pos_node.GetTransformNodeID()
+            if centering_id:
+                centering_node = slicer.mrmlScene.GetNodeByID(centering_id)
+                contra_pos_tf = getattr(self._parameterNode, f"contraPositionedTransform{s}", None)
+                if centering_node and centering_node != contra_pos_tf:
+                    _remove(centering_node)
+        _remove(contra_pos_node)
+        setattr(self._parameterNode, f"contraPositionedNode{s}", None)
+
+        contra_pos_tf = getattr(self._parameterNode, f"contraPositionedTransform{s}", None)
+        _remove(contra_pos_tf)
+        setattr(self._parameterNode, f"contraPositionedTransform{s}", None)
+
+        _remove(slicer.mrmlScene.GetFirstNodeByName(f"ContraPositionedCentering_{side_suffix}"))
+
+        # Posteriorer Markup dieser Seite
+        pm_node = getattr(self._parameterNode, f"posteriorMarkup{s}", None)
+        if pm_node is not None:
+            obs = self._posteriorMarkupObservers.get(isLeft)
+            if obs is not None:
+                pm_node.RemoveObserver(obs)
+                self._posteriorMarkupObservers[isLeft] = None
+        _remove(pm_node)
+        setattr(self._parameterNode, f"posteriorMarkup{s}", None)
+
+        # Observer vom Segmentierungsknoten lösen
+        seg_obs = self._segObservers.get(isLeft)
+        if self._segNodes.get(isLeft) is not None and seg_obs is not None:
+            try:
+                self._segNodes[isLeft].RemoveObserver(seg_obs)
+            except Exception:
+                pass
+        self._segObservers[isLeft] = None
+
+        # Widget-Zustand zurücksetzen
+        self._segTexts[isLeft] = ""
+        self._segVolumes[isLeft] = None
+        self._segNodes[isLeft] = None
+        self._segIds[isLeft] = None
+
+        self.ui.segmentationResultLabel.setText("")
+        self.ui.openSegmentEditorButton.setEnabled(False)
+        wasBlocked = self.ui.segNodeSelector.blockSignals(True)
+        self.ui.segNodeSelector.setCurrentNode(None)
+        self.ui.segNodeSelector.blockSignals(wasBlocked)
 
     def onOpenSegmentEditorButton(self) -> None:
         isLeft   = self._parameterNode.sideIsLeft if self._parameterNode else True
@@ -943,6 +1905,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             disp.SetColor(1.0, 0.2, 0.2)
             disp.SetGlyphScale(3.0)
             setattr(self._parameterNode, attr, node)
+            self._placeInFolder(node, isLeft)
 
             # Attach observer so that depth updates automatically when the point moves
             obs = node.AddObserver(
@@ -960,6 +1923,108 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         selNode.SetActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
         interNode = slicer.app.applicationLogic().GetInteractionNode()
         interNode.SetCurrentInteractionMode(slicer.vtkMRMLInteractionNode.Place)
+
+    def onSegNodeSelectorChanged(self, node) -> None:
+        if self._parameterNode is None:
+            return
+        isLeft = self._parameterNode.sideIsLeft
+        s = "Left" if isLeft else "Right"
+        setattr(self._parameterNode, f"segmentationNode{s}", node)
+        if node is not None:
+            self.ui.openSegmentEditorButton.setEnabled(True)
+            seg = node.GetSegmentation()
+            seg_id = None
+            for i in range(seg.GetNumberOfSegments()):
+                if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
+                    seg_id = seg.GetNthSegmentID(i)
+                    break
+            self._segNodes[isLeft] = node
+            self._segIds[isLeft]   = seg_id
+            # Calculate and display volume immediately
+            if seg_id is not None:
+                try:
+                    vol_ml, voxel_count = self._calculateVolumeFromSegment(node, seg_id)
+                    self._segVolumes[isLeft] = vol_ml
+                    text = (
+                        _("<b>Intraorbital volume: {vol:.2f} ml</b><br>"
+                          "Voxels: {vox}").format(vol=vol_ml, vox=f"{voxel_count:,}")
+                    )
+                    self._segTexts[isLeft] = text
+                    self.ui.segmentationResultLabel.setText(text)
+                except Exception:
+                    pass
+            else:
+                self._segTexts[isLeft] = ""
+                self.ui.segmentationResultLabel.setText("")
+        else:
+            self.ui.openSegmentEditorButton.setEnabled(False)
+            self._segNodes[isLeft] = None
+            self._segIds[isLeft]   = None
+            self._segTexts[isLeft] = ""
+            self._segVolumes[isLeft] = None
+            self.ui.segmentationResultLabel.setText("")
+
+    def onCutoffNodeSelectorChanged(self, node) -> None:
+        """Wird aufgerufen wenn der Nutzer einen anderen Cutoff-Node aus dem Dropdown wählt."""
+        if self._parameterNode is None:
+            return
+        old_node = self._parameterNode.posteriorCutoffNode
+        if old_node is not node and self._cutoffMarkupObserver is not None:
+            try:
+                old_node.RemoveObserver(self._cutoffMarkupObserver)
+            except Exception:
+                pass
+            self._cutoffMarkupObserver = None
+        self._parameterNode.posteriorCutoffNode = node
+        if node is not None and self._cutoffMarkupObserver is None:
+            self._cutoffMarkupObserver = node.AddObserver(
+                vtk.vtkCommand.ModifiedEvent,
+                lambda c, e: self._onCutoffMarkupModified(),
+            )
+        self._onCutoffMarkupModified()
+
+    def onPlaceCutoffButton(self) -> None:
+        """Erstellt einen neuen Cutoff-Punkt (oder leert den bestehenden) und aktiviert
+        den Platzierungs-Modus.  Wird ein bestehender Node bereits genutzt, werden nur
+        die Kontrollpunkte entfernt – der Node selbst bleibt erhalten."""
+        if self._parameterNode is None:
+            return
+        existing = self._parameterNode.posteriorCutoffNode
+        if existing is not None and slicer.mrmlScene.IsNodePresent(existing):
+            node = existing
+            node.RemoveAllControlPoints()
+        else:
+            node = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLMarkupsFiducialNode", "PosteriorCutoff"
+            )
+            disp = node.GetDisplayNode()
+            disp.SetSelectedColor(1.0, 0.4, 0.0)
+            disp.SetColor(1.0, 0.4, 0.0)
+            disp.SetGlyphScale(3.0)
+            # Selector setzen → löst onCutoffNodeSelectorChanged aus
+            # → setzt parameterNode.posteriorCutoffNode + Observer
+            self.ui.cutoffNodeSelector.setCurrentNode(node)
+            self._placeUnderCTVolume(node)
+        node.SetMaximumNumberOfControlPoints(1)
+        selNode   = slicer.app.applicationLogic().GetSelectionNode()
+        selNode.SetActivePlaceNodeID(node.GetID())
+        selNode.SetActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+        interNode = slicer.app.applicationLogic().GetInteractionNode()
+        interNode.SetCurrentInteractionMode(slicer.vtkMRMLInteractionNode.Place)
+
+    def _onCutoffMarkupModified(self) -> None:
+        """Aktualisiert das Positions-Label der posterioren Cutoff-Ebene."""
+        if self._parameterNode is None:
+            return
+        node = self._parameterNode.posteriorCutoffNode
+        if node is None or node.GetNumberOfControlPoints() == 0:
+            self.ui.cutoffPositionLabel.setText(_("nicht gesetzt"))
+            return
+        pt = [0.0, 0.0, 0.0]
+        node.GetNthControlPointPositionWorld(0, pt)
+        self.ui.cutoffPositionLabel.setText(
+            f"R={pt[0]:.1f}  A={pt[1]:.1f}  S={pt[2]:.1f}"
+        )
 
     def _onPosteriorMarkupModified(self, isLeft: bool) -> None:
         """Recomputes orbital depth from the posterior boundary markup and updates the spinbox."""
@@ -1005,6 +2070,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         if seg_node is None or seg_id is None:
             return
         volume_ml, voxel_count = self._calculateVolumeFromSegment(seg_node, seg_id)
+        self._segVolumes[isLeft] = volume_ml
         text = (
             _("<b>Intraorbital volume: {vol:.2f} ml</b>"
               " &nbsp;<i>(after manual editing)</i><br>"
@@ -1035,6 +2101,106 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         except Exception as exc:
             logging.warning(f"Volume recalculation failed: {exc}")
             return 0.0, 0
+
+    # ------------------------------------------------------------------
+    # Theme-aware styling
+    # 
+    # obsolete, stylesheets break theming in dark mode
+    # ------------------------------------------------------------------
+
+    def _refreshButtonStyles(self, *_) -> None:
+        """Reapplies theme-sensitive stylesheets after a palette/style change."""
+        palette   = slicer.app.palette()
+        is_dark   = palette.color(qt.QPalette.Window).lightness() < 128
+        border    = "#555" if is_dark else "#888"
+        active_bg = "#2a7a2a" if is_dark else "#00aa00"
+
+        self.ui.sideSelectionWidget.setStyleSheet(f"""
+            QPushButton {{
+                font-weight: bold;
+                border: 1px solid {border};
+                padding: 4px 12px;
+                min-height: 28px;
+            }}
+            QPushButton:checked {{
+                background-color: {active_bg};
+                color: white;
+            }}
+        """)
+
+        self.ui.stepsToolbox.setStyleSheet(f"""
+            QToolBox::tab {{
+                font-weight: bold;
+                border: 1px solid {border};
+            }}
+            QToolBox::tab:selected {{
+                background-color: {active_bg};
+                color: white;
+            }}
+        """)
+
+        # Force the entire widget tree to pick up the new app stylesheet.
+        # unpolish/polish re-evaluates QSS rules for each widget; necessary because
+        # qMRMLWidget and its children may cache the old style.
+        if hasattr(self, "_uiWidget") and self._uiWidget is not None:
+            style = slicer.app.style()
+            for w in [self._uiWidget] + list(self._uiWidget.findChildren(qt.QWidget)):
+                style.unpolish(w)
+                style.polish(w)
+            self._uiWidget.update()
+
+    # ------------------------------------------------------------------
+    # Subject Hierarchy helpers
+    # ------------------------------------------------------------------
+
+    def _shCTItemID(self) -> int:
+        """SH item ID of the currently selected CT volume; creates the entry if missing.
+        Falls back to scene root when no CT is selected."""
+        shNode = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+        ct_node = self.ui.ctVolumeSelector.currentNode()
+        if ct_node is None:
+            return shNode.GetSceneItemID()
+        item_id = shNode.GetItemByDataNode(ct_node)
+        if item_id == shNode.GetInvalidItemID():
+            item_id = shNode.CreateItem(shNode.GetSceneItemID(), ct_node)
+        return item_id
+
+    def _getOrCreateSideFolder(self, isLeft: bool) -> int:
+        shNode = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+        parent_id = self._shCTItemID()
+        pn_name = (self._parameterNode.parameterNode.GetName()
+                   if self._parameterNode else "OrbitalVolumeWorkflow")
+        side_label = "Links" if isLeft else "Rechts"
+        folder_name = f"{pn_name} Orbital Volume Segmentation – {side_label}"
+        child_ids = vtk.vtkIdList()
+        shNode.GetItemChildren(parent_id, child_ids)
+        for i in range(child_ids.GetNumberOfIds()):
+            child_id = child_ids.GetId(i)
+            if shNode.GetItemName(child_id) == folder_name:
+                return child_id
+        return shNode.CreateFolderItem(parent_id, folder_name)
+
+    def _placeInFolder(self, node, isLeft: bool) -> None:
+        if node is None:
+            return
+        shNode = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+        folder_id = self._getOrCreateSideFolder(isLeft)
+        item_id = shNode.GetItemByDataNode(node)
+        if item_id == shNode.GetInvalidItemID():
+            shNode.CreateItem(folder_id, node)
+        else:
+            shNode.SetItemParent(item_id, folder_id)
+
+    def _placeUnderCTVolume(self, node) -> None:
+        if node is None:
+            return
+        shNode = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+        parent_id = self._shCTItemID()
+        item_id = shNode.GetItemByDataNode(node)
+        if item_id == shNode.GetInvalidItemID():
+            shNode.CreateItem(parent_id, node)
+        else:
+            shNode.SetItemParent(item_id, parent_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1134,6 +2300,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         model_seed_id=None,
         remove_satellites: bool = True,
         min_satellite_diameter_mm: float = 3.0,
+        posterior_cutoff_ras=None,
     ) -> dict:
         """
         Segmentiert das intraorbitale Volumen via Fast Marching.
@@ -1171,13 +2338,15 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         print(f"  Seed pos (RAS): {np.round(seed_ras, 1)}")
 
-        seed_name = plane_model.GetName().replace("_OrbitalPlane", "") + "_Seed"
+        ct_vol_name   = volume_node.GetName()
+        side_suffix   = plane_model.GetName().replace("_OrbitalPlane", "")
+        seed_name     = f"{ct_vol_name}_{side_suffix}_Seed"
+        seg_node_name = f"{ct_vol_name}_{side_suffix}_IntraorbitalSeg"
+
         seed_node = self._placeSeedFiducial(
             seed_ras, name=seed_name, existing_node=existing_seed_node
         )
         seed_node.GetDisplayNode().SetVisibility(1 if show_seed else 0)
-
-        seg_node_name = plane_model.GetName().replace("_OrbitalPlane", "_IntraorbitalSeg")
 
         if existing_segmentation_node is not None:
             segmentation_node = existing_segmentation_node
@@ -1214,16 +2383,31 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             contralateral_seg_id=contralateral_seg_id,
             model_seed_node=model_seed_node,
             model_seed_id=model_seed_id,
+            posterior_cutoff_ras=posterior_cutoff_ras,
         )
 
-        print("  Smoothing: Closing (3 mm) ...")
-        self._smoothSegment(segmentation_node, seg_id, kernel_size_mm=3.0, method="closing")
-        print("  Smoothing: Opening (3 mm) ...")
-        self._smoothSegment(segmentation_node, seg_id, kernel_size_mm=3.0, method="opening")
+        # TODO: new workflow for post processing
 
-        if remove_satellites:
-            print(f"  Satellite removal (min diameter {min_satellite_diameter_mm} mm) ...")
-            self._removeSatelliteRegions(segmentation_node, seg_id, min_satellite_diameter_mm)
+        # 1. Smoothin Closing 5 mm everywhere
+        # 2. Threshold -1000 bis hu-max inside segment
+        # 3. Smoothing Opening 8-10 mm inside segment
+        # 4. Islands keep larges everywhere
+        # 5. skip remove_satellites, no use
+        # 6. as the very last step cutoff anterior and posterior cutoffs
+
+        # TODO: remove, obsolete
+        # print("  Smoothing: Closing (3 mm) ...")
+        # self._smoothSegment(segmentation_node, seg_id, kernel_size_mm=3.0, method="closing")
+        # print("  Smoothing: Opening (3 mm) ...")
+        # self._smoothSegment(segmentation_node, seg_id, kernel_size_mm=3.0, method="opening")
+
+        # print(f"  HU mask: removing voxels above {hu_max} HU ...")
+        # self._maskSegmentByHU(segmentation_node, seg_id, volume_node, hu_max=hu_max)
+
+        # TODO: remove, obsolete
+        # if remove_satellites:
+        #     print(f"  Satellite removal (min diameter {min_satellite_diameter_mm} mm) ...")
+        #     self._removeSatelliteRegions(segmentation_node, seg_id, min_satellite_diameter_mm)
 
         seg = segmentation_node.GetSegmentation()
         segment = seg.GetSegment(seg_id)
@@ -1239,8 +2423,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
 
         print(f"\n{'─'*60}")
-        print(f"  Intraorbital volume    : {volume_ml:.2f} ml")
-        print(f"  Voxels                 : {voxel_count:,}")
+        print(f"  FM raw voxels          : {voxel_count:,}  ({volume_ml:.2f} ml before post-processing)")
         print(f"  Segment node           : {seg_node_name}")
         print(f"{'='*60}\n")
 
@@ -1484,6 +2667,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         contralateral_seg_id=None,
         model_seed_node=None,
         model_seed_id=None,
+        posterior_cutoff_ras=None,
     ):
         """Segments the intraorbital volume via Fast Marching on a HU-derived speed image.
 
@@ -1653,6 +2837,24 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         else:
             region_points = []
 
+        # Trial-Punkte posterior zur Cutoff-Ebene entfernen.
+        # FM-Trial-Points haben Arrival-Time=0 unabhängig vom Speed-Wert.
+        # Ebenennormale = (0,1,0) in LPS = Posterior-Richtung (Koronalebene).
+        # Da CTs korrekt ausgerichtet sind, entspricht das der anatomischen AP-Achse.
+        if posterior_cutoff_ras is not None and region_points:
+            cutoff_lps_pre = np.array([
+                -posterior_cutoff_ras[0],
+                -posterior_cutoff_ras[1],
+                 posterior_cutoff_ras[2],
+            ])
+            posterior_dir = np.array([0.0, 1.0, 0.0])  # +Y in LPS = Posterior
+            pts_ijk = np.array(region_points, dtype=np.float64)  # (N, 3): i,j,k
+            pts_lps = origin + (direction @ (pts_ijk * spacing).T).T
+            keep = (pts_lps - cutoff_lps_pre) @ posterior_dir <= 0
+            n_before = len(region_points)
+            region_points = [p for p, k in zip(region_points, keep) if k]
+            print(f"  Cutoff-Filter Trial-Punkte: {len(region_points)}/{n_before} behalten")
+
         trial_points = region_points if region_points else [seed_idx]
         if seed_idx not in trial_points:
             trial_points = [seed_idx] + trial_points
@@ -1669,6 +2871,23 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # Alle Voxel mit Arrival-Time < stopping_value gehören zum Segment.
         arrival_arr = sitk.GetArrayFromImage(arrival)
         binary_arr  = (arrival_arr < stopping_value).astype(np.uint8)
+
+        # --- 16b. Posteriore Cutoff-Ebene (hard stop, beide Seiten gleich) ---
+        # Koronalebene durch den Cutoff-Punkt; Normale = (0,1,0) in LPS = Posterior.
+        # Alle Voxel mit LPS_Y > cutoff_LPS_Y werden auf 0 gesetzt.
+        if posterior_cutoff_ras is not None:
+            cutoff_lps = np.array([
+                -posterior_cutoff_ras[0],
+                -posterior_cutoff_ras[1],
+                 posterior_cutoff_ras[2],
+            ])
+            posterior_dir = np.array([0.0, 1.0, 0.0])  # +Y in LPS = Posterior
+            depth_from_cutoff = (lps_pts - cutoff_lps) @ posterior_dir
+            posterior_mask = depth_from_cutoff.reshape(Nz, Ny, Nx) > 0
+            n_clipped = int(binary_arr[posterior_mask].sum())
+            binary_arr[posterior_mask] = 0
+            print(f"  Posterior cutoff: {n_clipped:,} Voxel hinter Cutoff-Ebene entfernt")
+
         voxel_count = int(binary_arr.sum())
 
         sp = sitk_image.GetSpacing()
@@ -1740,6 +2959,60 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         flat_out = result.astype(np.uint8).flatten().astype(flat.dtype)
         scalars.DeepCopy(nps.numpy_to_vtk(flat_out))
+        binary_lm.Modified()
+        segmentation_node.Modified()
+
+    def _maskSegmentByHU(self, segmentation_node, seg_id, volume_node, hu_max: float) -> None:
+        """Removes all voxels from the segment whose CT value exceeds hu_max.
+
+        Smoothing (closing) can push the segmentation boundary into cortical bone.
+        This mask restores the HU constraint by zeroing out any voxel where the
+        original CT intensity is above hu_max.
+        """
+        import vtk.util.numpy_support as nps
+        import sitkUtils
+        import SimpleITK as sitk
+
+        seg = segmentation_node.GetSegmentation()
+        binary_lm = seg.GetSegment(seg_id).GetRepresentation("Binary labelmap")
+        if binary_lm is None:
+            return
+
+        # Export CT into the same geometry as the binary labelmap
+        ref_lm = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode", "_TmpHURef")
+        try:
+            slicer.modules.segmentations.logic().ExportAllSegmentsToLabelmapNode(
+                segmentation_node, ref_lm, slicer.vtkSegmentation.EXTENT_REFERENCE_GEOMETRY
+            )
+            ct_sitk  = sitkUtils.PullVolumeFromSlicer(volume_node)
+            ref_sitk = sitkUtils.PullVolumeFromSlicer(ref_lm)
+        finally:
+            slicer.mrmlScene.RemoveNode(ref_lm)
+
+        # Resample CT to labelmap geometry (nearest-neighbour, float keeps HU values)
+        resampler = sitk.ResampleImageFilter()
+        resampler.SetReferenceImage(ref_sitk)
+        resampler.SetInterpolator(sitk.sitkLinear)
+        resampler.SetDefaultPixelValue(-1000.0)
+        ct_resampled = resampler.Execute(ct_sitk)
+
+        ct_arr  = sitk.GetArrayFromImage(ct_resampled)   # (z, y, x)
+        dims    = binary_lm.GetDimensions()               # (x, y, z)
+        scalars = binary_lm.GetPointData().GetScalars()
+        flat    = nps.vtk_to_numpy(scalars)
+        seg_arr = flat.reshape(dims[2], dims[1], dims[0])  # (z, y, x)
+
+        # Clip ct_arr to the labelmap extent if sizes differ by 1 (rounding)
+        for axis, lm_size in enumerate(seg_arr.shape):
+            if ct_arr.shape[axis] != lm_size:
+                slices = [slice(None)] * 3
+                slices[axis] = slice(0, lm_size)
+                ct_arr = ct_arr[tuple(slices)]
+
+        bone_mask = ct_arr > hu_max
+        seg_arr[bone_mask] = 0
+
+        scalars.DeepCopy(nps.numpy_to_vtk(seg_arr.astype(flat.dtype).flatten()))
         binary_lm.Modified()
         segmentation_node.Modified()
 
@@ -1838,24 +3111,10 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             opacity=0.25,
         )
 
-        # Shrink 10 % towards mass centre so the seed stays away from bone / ethmoidal cells
-        shrunk = self._shrinkBinaryMask(mirrored, scale_factor=0.9)
-        print(f"  Shrunk seed region:   {int(shrunk.sum()):,} voxels")
-
-        # Display shrunk mask (orange, slightly more opaque so it's easy to distinguish)
-        shrunk_sitk = sitk.GetImageFromArray(shrunk)
-        shrunk_sitk.CopyInformation(contra_sitk)
-        self._importBinaryAsSegNode(
-            shrunk_sitk, volume_node,
-            name=f"{name_prefix}ContraMirror_Shrunk",
-            color=(1.0, 0.55, 0.1),
-            opacity=0.4,
-        )
-
-        # Collect nonzero indices of shrunk mask as FM trial points
-        nz_k, nz_j, nz_i = np.where(shrunk > 0)
+        # Collect nonzero indices as FM trial points
+        nz_k, nz_j, nz_i = np.where(mirrored > 0)
         if len(nz_i) == 0:
-            print("  Shrunk seed is empty – falling back to single seed.")
+            print("  Mirrored seed is empty – falling back to single seed.")
             return []
 
         return [(int(nz_i[m]), int(nz_j[m]), int(nz_k[m])) for m in range(len(nz_i))]
@@ -1873,6 +3132,18 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         import SimpleITK as sitk
         import sitkUtils
 
+        # Gehärtete Kopie erstellen: ExportSegmentsToLabelmapNode berücksichtigt
+        # Skalierungs-Transforms nicht immer korrekt; Härten bäckt die vollständige
+        # Transform-Kette (Translation, Rotation, Skalierung) in die Geometrie ein.
+        hardened_copy = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLSegmentationNode", "_TmpModelSegHardened"
+        )
+        hardened_copy.GetSegmentation().DeepCopy(model_seg_node.GetSegmentation())
+        tf_id = model_seg_node.GetTransformNodeID()
+        if tf_id:
+            hardened_copy.SetAndObserveTransformNodeID(tf_id)
+            slicer.modules.transforms.logic().hardenTransform(hardened_copy)
+
         seg_id_arr = vtk.vtkStringArray()
         seg_id_arr.InsertNextValue(model_seg_id)
         tmp_lm = slicer.mrmlScene.AddNewNodeByClass(
@@ -1880,11 +3151,12 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         )
         try:
             slicer.modules.segmentations.logic().ExportSegmentsToLabelmapNode(
-                model_seg_node, seg_id_arr, tmp_lm, volume_node
+                hardened_copy, seg_id_arr, tmp_lm, volume_node
             )
             model_sitk = sitkUtils.PullVolumeFromSlicer(tmp_lm)
         finally:
             slicer.mrmlScene.RemoveNode(tmp_lm)
+            slicer.mrmlScene.RemoveNode(hardened_copy)
 
         model_arr = sitk.GetArrayFromImage(model_sitk)
         n_vox = int(model_arr.sum())
@@ -1894,48 +3166,16 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             print("  Model seed is empty – verify the template is positioned inside the CT volume.")
             return []
 
-        # Display the positioned seed region (purple) for user verification
+        # Display the full positioned template (purple) for reference
         self._importBinaryAsSegNode(
             model_sitk, volume_node,
             name=f"{name_prefix}ModelSeed",
             color=(0.7, 0.2, 0.9),
-            opacity=0.4,
+            opacity=0.25,
         )
 
         nz_k, nz_j, nz_i = np.where(model_arr > 0)
         return [(int(nz_i[m]), int(nz_j[m]), int(nz_k[m])) for m in range(len(nz_i))]
-
-    def _shrinkBinaryMask(self, binary_arr, scale_factor: float = 0.9):
-        """Scales a binary mask towards its mass centre by scale_factor.
-
-        Uses inverse coordinate mapping: output voxel q is set iff the source point
-        centre + (q − centre) / scale_factor lies inside the original mask.
-        A scale_factor of 0.9 shrinks the mask by ~10 % in each linear direction.
-        """
-        from scipy import ndimage
-
-        binary = (binary_arr > 0).astype(np.float32)
-        if not binary.any():
-            return binary_arr.copy()
-
-        center = np.array(ndimage.center_of_mass(binary))  # ZYX index coords
-
-        Nz, Ny, Nx = binary.shape
-        z_idx, y_idx, x_idx = np.meshgrid(
-            np.arange(Nz), np.arange(Ny), np.arange(Nx), indexing='ij'
-        )
-        coords = np.stack([z_idx, y_idx, x_idx], axis=0).astype(np.float64)
-
-        # Inverse-map: output voxel q comes from source = centre + (q − centre) / scale_factor
-        src = (
-            center[:, None, None, None]
-            + (coords - center[:, None, None, None]) / scale_factor
-        )
-
-        sampled = ndimage.map_coordinates(
-            binary, src.reshape(3, -1), order=1, mode='constant', cval=0.0
-        )
-        return (sampled.reshape(Nz, Ny, Nx) > 0.5).astype(np.uint8)
 
     def _importBinaryAsSegNode(self, binary_sitk, volume_node, name, color, opacity=0.35):
         """Creates (or replaces) a named segmentation node from a SimpleITK binary image."""
