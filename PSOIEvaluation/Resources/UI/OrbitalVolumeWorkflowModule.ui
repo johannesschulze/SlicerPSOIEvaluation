@@ -571,7 +571,7 @@
           </widget>
          </item>
          <item row="2" column="1">
-          <widget class="QSpinBox" name="huMinSpinBox">
+          <widget class="ctkSliderWidget" name="huMinSpinBox">
            <property name="toolTip">
             <string>Lower HU threshold for automatic seed search (fat/soft tissue)</string>
            </property>
@@ -594,7 +594,7 @@
           </widget>
          </item>
          <item row="3" column="1">
-          <widget class="QSpinBox" name="huMaxSpinBox">
+          <widget class="ctkSliderWidget" name="huMaxSpinBox">
            <property name="toolTip">
             <string>Upper HU threshold for automatic seed search (bone excluded above ~300)</string>
            </property>
@@ -1079,6 +1079,7 @@
            </property>
           </widget>
          </item>
+
          <item row="20" column="0">
           <widget class="QLabel" name="labelRemoveSatellites">
            <property name="text">
@@ -1086,6 +1087,7 @@
            </property>
           </widget>
          </item>
+
          <item row="20" column="1">
           <widget class="QCheckBox" name="removeSatellitesCheckBox">
            <property name="toolTip">
@@ -1096,6 +1098,7 @@
            </property>
           </widget>
          </item>
+
          <item row="21" column="0">
           <widget class="QLabel" name="labelSatelliteDiam">
            <property name="text">
@@ -1103,6 +1106,7 @@
            </property>
           </widget>
          </item>
+
          <item row="21" column="1">
           <widget class="QDoubleSpinBox" name="satelliteDiamSpinBox">
            <property name="toolTip">
@@ -1122,6 +1126,7 @@
            </property>
           </widget>
          </item>
+
          <item row="22" column="0" colspan="2">
           <widget class="QLabel" name="labelCutoffHeader">
            <property name="text">
@@ -1129,6 +1134,7 @@
            </property>
           </widget>
          </item>
+
          <item row="23" column="0">
           <widget class="QLabel" name="labelCutoffPoint">
            <property name="text">
@@ -1136,6 +1142,7 @@
            </property>
           </widget>
          </item>
+
          <item row="23" column="1">
           <layout class="QHBoxLayout" name="cutoffRowLayout">
            <item>
@@ -1162,6 +1169,7 @@
              </property>
             </widget>
            </item>
+
            <item>
             <widget class="QPushButton" name="placeCutoffButton">
              <property name="toolTip">
@@ -1174,6 +1182,7 @@
            </item>
           </layout>
          </item>
+
          <item row="24" column="0">
           <widget class="QLabel" name="labelCutoffPosition">
            <property name="text">
@@ -1181,6 +1190,7 @@
            </property>
           </widget>
          </item>
+
          <item row="24" column="1">
           <widget class="QLabel" name="cutoffPositionLabel">
            <property name="text">
@@ -1190,27 +1200,90 @@
          </item>
         </layout>
        </item>
-       <item>
-        <layout class="QHBoxLayout" name="segmentButtonsLayout">
-         <item>
-          <widget class="QPushButton" name="segmentVolumeButton">
-           <property name="text">
-            <string>Segment Volume</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="clearSideButton">
-           <property name="toolTip">
-            <string>Löscht alle Segmentierungs-Nodes der aktuell gewählten Seite (Seed, Transforms, Segmentierung, Preview-Nodes) nach Bestätigung.</string>
-           </property>
-           <property name="text">
-            <string>Clear</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
+
+       <item> <!-- Vertical Spacer Between Label/Description and UI -->
+        <spacer name="verticalSpacerAboveSegmentation">
+            <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+            </property>
+            <property name="sizeType">
+                <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+                <size>
+                    <width>20</width>
+                    <height>15</height>
+                </size>
+            </property>
+        </spacer>
        </item>
+
+       <item>
+        <widget class="QPushButton" name="segmentVolumeButton">
+        <property name="text">
+        <string>Segment Volume</string>
+        </property>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QPushButton" name="selectIslandButton">
+        <property name="text">
+        <string>Pick Island</string>
+        </property>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QPushButton" name="performCutoffButton">
+        <property name="text">
+        <string>Crop Entrance Plane</string>
+        </property>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QPushButton" name="openSegmentEditorButton">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="toolTip">
+          <string>Opens the Segment Editor with the Scissors tool active for manual corrections. The volume is automatically recalculated after editing.</string>
+         </property>
+         <property name="text">
+          <string>Edit in Segment Editor (Scissors)</string>
+         </property>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QPushButton" name="clearSideButton">
+        <property name="toolTip">
+        <string>Löscht alle Segmentierungs-Nodes der aktuell gewählten Seite (Seed, Transforms, Segmentierung, Preview-Nodes) nach Bestätigung.</string>
+        </property>
+        <property name="text">
+        <string>Clear</string>
+        </property>
+        </widget>
+       </item>
+
+       <item> <!-- Vertical Spacer Above Segmentation Node Selector -->
+        <spacer name="verticalSpacerAboveSegmentation">
+            <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+            </property>
+            <property name="sizeType">
+                <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+                <size>
+                    <width>20</width>
+                    <height>15</height>
+                </size>
+            </property>
+        </spacer>
+       </item>
+
        <item>
         <layout class="QHBoxLayout" name="segNodeSelectorLayout">
          <item>
@@ -1252,42 +1325,49 @@
          </item>
         </layout>
        </item>
-       <item>
-        <widget class="QPushButton" name="openSegmentEditorButton">
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="toolTip">
-          <string>Opens the Segment Editor with the Scissors tool active for manual corrections. The volume is automatically recalculated after editing.</string>
-         </property>
-         <property name="text">
-          <string>Edit in Segment Editor (Scissors)</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="segmentationResultLabel">
-         <property name="text">
-          <string/>
-         </property>
-         <property name="wordWrap">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="exportResultsButton">
-         <property name="toolTip">
-          <string>Exports segmentation parameters and volumes for both sides to results_orbital_volume.xlsx in the CT volume's directory</string>
-         </property>
-         <property name="text">
-          <string>Export Results (Excel)</string>
-         </property>
-        </widget>
-       </item>
+       
       </layout>
      </widget>
     <!--</widget>-->
+   </item>
+
+   <item> <!-- Vertical Spacer Above Results Label -->
+    <spacer name="verticalSpacerAboveSegmentation">
+        <property name="orientation">
+            <enum>Qt::Orientation::Vertical</enum>
+        </property>
+        <property name="sizeType">
+            <enum>QSizePolicy::Fixed</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+            <size>
+                <width>20</width>
+                <height>15</height>
+            </size>
+        </property>
+    </spacer>
+   </item>
+
+   <item> <!-- Results Label -->
+    <widget class="QLabel" name="segmentationResultLabel">
+        <property name="text">
+        <string/>
+        </property>
+        <property name="wordWrap">
+        <bool>true</bool>
+        </property>
+    </widget>
+    </item>
+
+    <item> <!-- Export Button Label -->
+    <widget class="QPushButton" name="exportResultsButton">
+    <property name="toolTip">
+    <string>Exports segmentation parameters and volumes for both sides to results_orbital_volume.xlsx in the CT volume's directory</string>
+    </property>
+    <property name="text">
+    <string>Export Results (Excel)</string>
+    </property>
+    </widget>
    </item>
 
    <item> <!-- Vertical Spacer Bottom (expanding)-->

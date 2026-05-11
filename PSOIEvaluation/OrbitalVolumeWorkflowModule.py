@@ -12,10 +12,12 @@ Unterstützt linke und rechte Orbita getrennt.
 
 import logging
 import os
+import time
 from typing import Optional
 
 import numpy as np
 import vtk
+import ctk
 
 from __main__ import slicer
 import qt
@@ -35,6 +37,8 @@ from slicer import (
     vtkMRMLMarkupsFiducialNode, vtkMRMLLinearTransformNode,
 )
 
+import SimpleITK as sitk
+import sitkUtils
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Modul-Klasse
@@ -83,10 +87,10 @@ class OrbitalVolumeWorkflowModuleParameterNode:
     sideIsLeft:       bool = True
     rightSideVisited: bool = False
     # Segmentierungsparameter – separat für linke und rechte Seite
-    huMinLeft:          int   = -200
-    huMinRight:         int   = -200
-    huMaxLeft:          int   =  300
-    huMaxRight:         int   =  300
+    huMinLeft:          float   = -200
+    huMinRight:         float   = -200
+    huMaxLeft:          float   =  300
+    huMaxRight:         float   =  300
     autoSeedLeft:       bool  = True
     autoSeedRight:      bool  = True
     seedOffsetLeft:     float = 10.0
@@ -206,10 +210,9 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         uiWidget.setMRMLScene(slicer.mrmlScene)
         self._uiWidget = uiWidget
 
-        # breaks the ui themening, is obsolete
-        # self._refreshButtonStyles()
-        # slicer.app.connect("paletteChanged(QPalette)", self._refreshButtonStyles)
-        # slicer.app.connect("styleChanged(QString)", self._refreshButtonStyles)
+        slicer.app.connect("paletteChanged(QPalette)", self._refreshButtonStyles)
+        slicer.app.connect("styleChanged(QString)", self._refreshButtonStyles)
+
 
         self.logic = OrbitalVolumeWorkflowModuleLogic()
 
@@ -239,6 +242,9 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         
         self.ui.placeCutoffButton.connect("clicked(bool)", self.onPlaceCutoffButton)
         self.ui.placeCutoffButton.setIcon(qt.QIcon(self.resourcePath("Icons/MarkupsFiducialMouseModePlace.png")))
+
+        self.ui.selectIslandButton.connect("clicked(bool)", self.onSelectIslandButton)
+        self.ui.performCutoffButton.connect("clicked(bool)", self.onPerformCutoffButton)
 
         # Open Documentation Button
         self.ui.openDocumentationButton.connect("clicked(bool)", self.onOpenDocumentationClicked)
@@ -406,26 +412,19 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         webbrowser.open("file://" + filename)
 
     def onPageCollapsibleClicked(self, sender: qt.QWidget, expanded: bool) -> None:
-        defaultPalette = slicer.app.palette()
-        self.ui.pageVolumeSegmentation.setChecked(False)
-        self.ui.pageVolumeSegmentation.setPalette(defaultPalette)
-        self.ui.pageOrbitalSurface.setChecked(False)
-        self.ui.pageOrbitalSurface.setPalette(defaultPalette)
+        collapsibleWidgets = self._uiWidget.findChildren(ctk.ctkCollapsibleButton)
+
+        for w in collapsibleWidgets:
+            w.setChecked(False)
 
         if expanded:
-            self._parameterNode.currentStep = sender.objectName
             sender.setChecked(True)
-
-            activePalette = slicer.app.palette()
-            activePalette.setColor(qt.QPalette.Button, qt.QColor("green"))
-            activePalette.setColor(qt.QPalette.ButtonText, qt.QColor("white"))
-            sender.setPalette(activePalette)
-
-            children = sender.findChildren(qt.QWidget)
-            for i in range(len(children)):
-                children[i].setPalette(defaultPalette)
+            self._parameterNode.currentStep = sender.objectName
         else:
             self._parameterNode.currentStep = ""
+
+        self._refreshButtonStyles()
+            
 
     def _activateCurrentStep(self):
         currentStep = self._parameterNode.currentStep
@@ -612,14 +611,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         btnActive = self.ui.btnSideLeft if isLeft else self.ui.btnSideRight
         btnInactive = self.ui.btnSideRight if isLeft else self.ui.btnSideLeft
 
-        # inactive button uses default palette
-        btnInactive.setPalette(slicer.app.palette())
-        
-        # active buttons get's colourful highlight
-        paletteActive = slicer.app.palette()
-        paletteActive.setColor(qt.QPalette.Button, qt.QColor("green")) # green background
-        paletteActive.setColor(qt.QPalette.ButtonText, qt.QColor("white")) # white Text
-        btnActive.setPalette(paletteActive)
+        self._refreshButtonStyles()
 
         self.ui.planeModelSelector.blockSignals(True)
         if self._parameterNode:
@@ -802,8 +794,25 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             self._parameterNode.ctVolume = volume_node
         if volume_node is None:
             return
+        
+        # hide 3D rendering of previous Volume
+        if not self._vrDisplayNode is None:
+            print("remove existing volume rendering node")
+            slicer.modules.volumerendering.logic().RemoveVolumeRenderingDisplayNode(self._vrDisplayNode)
+
         self._applyVolumeRendering(volume_node)
         self._centerViewAnterior(volume_node)
+
+        # determine minimal and maximal HU Values
+        volumeArray = slicer.util.arrayFromVolume(volume_node).flatten()
+
+        hu_min = np.min(volumeArray)
+        hu_max = np.max(volumeArray)
+
+        self.ui.huMinSpinBox.minimum = hu_min
+        self.ui.huMaxSpinBox.minimum = hu_min
+        self.ui.huMinSpinBox.maximum = hu_max
+        self.ui.huMaxSpinBox.maximum = hu_max
 
     def onHUShiftChanged(self, shift_hu: float) -> None:
         """
@@ -813,14 +822,18 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
         # get Display Node and Properties
         if self._vrDisplayNode is None:
+            print("No vrDisplayNode set")
             return
+        
         volPropNode = self._vrDisplayNode.GetVolumePropertyNode()
+        
         if volPropNode is None:
             return
         
         # get Preset values
         vrLogic = slicer.modules.volumerendering.logic()
         presetNode = vrLogic.GetPresetByName("CT-Bone")
+        
         if presetNode is None:
             return
         
@@ -865,11 +878,12 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
     def _applyVolumeRendering(self, volume_node) -> None:
         from PSOILib import helperfunctions
-        #helperfunctions.showVolumeRendering(volume_node, preset="CT-Bone")
+
+        self._vrDisplayNode = helperfunctions.showVolumeRendering(volume_node, preset="CT-Bone")
 
         # DisplayNode für den HU-Shift-Mechanismus referenzieren
-        vrLogic = slicer.modules.volumerendering.logic()
-        self._vrDisplayNode = vrLogic.CreateDefaultVolumeRenderingNodes(volume_node)
+        # vrLogic = slicer.modules.volumerendering.logic()
+        # self._vrDisplayNode = vrLogic.CreateDefaultVolumeRenderingNodes(volume_node)
 
         # Toggle-Button in den "ein"-Zustand bringen (ohne erneutes Signal)
         self.ui.toggleVolumeRenderingButton.blockSignals(True)
@@ -1648,18 +1662,24 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             else:
                 self._parameterNode.segmentationNodeRight = result["segmentation_node"]
                 self._parameterNode.seedNodeRight         = result["seed_node"]
+
             # Place result nodes and any preview nodes in the side folder
             self._placeInFolder(result["segmentation_node"], isLeft)
             self._placeInFolder(result["seed_node"], isLeft)
+
             _seg_prefix = result["segmentation_node"].GetName().replace("_IntraorbitalSeg", "") + "_"
+
             for _pname in [f"{_seg_prefix}ContraMirror_Full", f"{_seg_prefix}ModelSeed"]:
                 _pnode = slicer.mrmlScene.GetFirstNodeByName(_pname)
                 if _pnode is not None:
                     self._placeInFolder(_pnode, isLeft)
+
             # Keep the manual selector in sync
             wasBlocked = self.ui.segNodeSelector.blockSignals(True)
+
             self.ui.segNodeSelector.setCurrentNode(result["segmentation_node"])
             self.ui.segNodeSelector.blockSignals(wasBlocked)
+
             # Finales Volumen aus dem fertigen Segment messen (nach Smoothing + Satellitenentfernung)
             seg_node_final = result["segmentation_node"]
             seg_id_final   = result["segment_id"]
@@ -1738,14 +1758,17 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             seg_id_new   = result["segment_id"]
             old_node = self._segNodes[isLeft]
             old_obs  = self._segObservers[isLeft]
+
             if old_node is not None and old_obs is not None:
                 old_node.RemoveObserver(old_obs)
+
             self._segNodes[isLeft] = seg_node_new
             self._segIds[isLeft]   = seg_id_new
             self._segObservers[isLeft] = seg_node_new.AddObserver(
                 vtk.vtkCommand.ModifiedEvent,
                 lambda c, e, side=isLeft: self._onSegmentModified(side),
             )
+
             self.ui.openSegmentEditorButton.setEnabled(True)
 
     def _nextStep(self) -> None:
@@ -2012,6 +2035,30 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         interNode = slicer.app.applicationLogic().GetInteractionNode()
         interNode.SetCurrentInteractionMode(slicer.vtkMRMLInteractionNode.Place)
 
+    def onSelectIslandButton(self, clicked: bool):
+        isLeft = self._parameterNode.sideIsLeft
+        segmentationNode = self._parameterNode.segmentationNodeLeft if isLeft else self._parameterNode.segmentationNodeRight
+        segment_id = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName("IntraorbitalVolume")
+
+        self.logic.segmentationKeepSelectedIsland(
+            self._parameterNode.ctVolume,
+            segmentationNode,
+            segment_id
+        )
+    
+    def onPerformCutoffButton(self, clicked: bool):
+        isLeft = self._parameterNode.sideIsLeft
+        segmentationNode = self._parameterNode.segmentationNodeLeft if isLeft else self._parameterNode.segmentationNodeRight
+        segment_id = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName("IntraorbitalVolume")
+        mask_segment_id = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName("Mask")
+
+        self.logic.segmentationPerformCutoff(
+            self._parameterNode.ctVolume,
+            segmentationNode,
+            segment_id,
+            mask_segment_id
+        )
+
     def _onCutoffMarkupModified(self) -> None:
         """Aktualisiert das Positions-Label der posterioren Cutoff-Ebene."""
         if self._parameterNode is None:
@@ -2089,7 +2136,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             binary_lm = segment.GetRepresentation("Binary labelmap")
             if binary_lm is None:
                 return 0.0, 0
-            import vtk.util.numpy_support as nps
+            import vtk.util.numpy_support as nps # pyright: ignore[reportMissingImports]
             scalars = binary_lm.GetPointData().GetScalars()
             if scalars is None:
                 return 0.0, 0
@@ -2110,44 +2157,32 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
     def _refreshButtonStyles(self, *_) -> None:
         """Reapplies theme-sensitive stylesheets after a palette/style change."""
-        palette   = slicer.app.palette()
-        is_dark   = palette.color(qt.QPalette.Window).lightness() < 128
-        border    = "#555" if is_dark else "#888"
-        active_bg = "#2a7a2a" if is_dark else "#00aa00"
+        defaultPalette = slicer.app.palette()
 
-        self.ui.sideSelectionWidget.setStyleSheet(f"""
-            QPushButton {{
-                font-weight: bold;
-                border: 1px solid {border};
-                padding: 4px 12px;
-                min-height: 28px;
-            }}
-            QPushButton:checked {{
-                background-color: {active_bg};
-                color: white;
-            }}
-        """)
+        themable_widgets = [
+            self.ui.pageVolumeSegmentation,
+            self.ui.pageOrbitalSurface,
+            self.ui.btnSideLeft,
+            self.ui.btnSideRight
+        ]
 
-        self.ui.stepsToolbox.setStyleSheet(f"""
-            QToolBox::tab {{
-                font-weight: bold;
-                border: 1px solid {border};
-            }}
-            QToolBox::tab:selected {{
-                background-color: {active_bg};
-                color: white;
-            }}
-        """)
+        # iterate through all widgets that need their colours adjusted
+        for w in themable_widgets:
+            if w.isChecked():
+                # widget is selected/expanded, apply special palette
+                activePalette = slicer.app.palette()
+                activePalette.setColor(qt.QPalette.Button, qt.QColor("green"))
+                activePalette.setColor(qt.QPalette.ButtonText, qt.QColor("white"))
+                w.setPalette(activePalette)
 
-        # Force the entire widget tree to pick up the new app stylesheet.
-        # unpolish/polish re-evaluates QSS rules for each widget; necessary because
-        # qMRMLWidget and its children may cache the old style.
-        if hasattr(self, "_uiWidget") and self._uiWidget is not None:
-            style = slicer.app.style()
-            for w in [self._uiWidget] + list(self._uiWidget.findChildren(qt.QWidget)):
-                style.unpolish(w)
-                style.polish(w)
-            self._uiWidget.update()
+                # make sure that the widgets children still have the default palette
+                children = w.findChildren(qt.QWidget)
+                for i in range(len(children)):
+                    children[i].setPalette(defaultPalette)
+            else:
+                # widget not selected, apply default palette
+                w.setPalette(defaultPalette)
+           
 
     # ------------------------------------------------------------------
     # Subject Hierarchy helpers
@@ -2209,6 +2244,20 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
 class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
+    COLORS_SEGMENTATION = [
+        (0.2, 0.8, 0.5), #green
+        (0.5, 0.2, 0.8), #blue
+        (0.8, 0.5, 0.2) #red
+    ]
+
+    COLORS_ORBITAL_PLANE = [
+        (0.7, 1.0, 0.2), # green
+        (0.2, 0.7, 1.0), # blue
+        (1.0, 0.2, 0.7) # red
+    ]
+
+    COLOR_DEFAULT = (0.5, 0.5, 0.5) #grey
+
     def __init__(self) -> None:
         ScriptedLoadableModuleLogic.__init__(self)
 
@@ -2225,7 +2274,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         method: str = "auto",
         subdivision_distance: float = 5.0,
         smooth_iterations: int = 0,
-        color: tuple = (0.2, 0.7, 1.0),
+        color: tuple = None,
         opacity: float = 0.65,
     ):
         """
@@ -2264,6 +2313,9 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         model_node.SetName(f"{curve_node.GetName()}_OrbitalPlane")
         model_node.SetAndObservePolyData(final_poly)
         model_node.CreateDefaultDisplayNodes()
+    
+        if color == None:
+            color = self._getColorForActiveParameterNode("OrbitalPlane")
 
         disp = model_node.GetDisplayNode()
         disp.SetOpacity(opacity)
@@ -2291,7 +2343,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         speed_sigma: float = 70.0,
         posterior_boost: float = 1.5,
         show_seed: bool = True,
-        segment_color: tuple = (0.2, 0.8, 0.5),
+        segment_color: tuple = None,
         existing_segmentation_node=None,
         existing_seed_node=None,
         contralateral_seg_node=None,
@@ -2371,7 +2423,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             f"{contra_info}) ..."
         )
 
-        seg_id, volume_ml, voxel_count = self._fastMarchingSegmentation(
+        seg_id, volume_ml, voxel_count, mask_segment_id = self._fastMarchingSegmentation(
             volume_node, segmentation_node, seed_ras,
             centroid, normal, orbital_radius_mm,
             orbital_depth_mm, radius_margin_mm,
@@ -2384,35 +2436,25 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             model_seed_node=model_seed_node,
             model_seed_id=model_seed_id,
             posterior_cutoff_ras=posterior_cutoff_ras,
-        )
+        )        
+ 
+        """ =========================
+                Segment Management
+            ========================= """
 
-        # TODO: new workflow for post processing
-
-        # 1. Smoothin Closing 5 mm everywhere
-        # 2. Threshold -1000 bis hu-max inside segment
-        # 3. Smoothing Opening 8-10 mm inside segment
-        # 4. Islands keep larges everywhere
-        # 5. skip remove_satellites, no use
-        # 6. as the very last step cutoff anterior and posterior cutoffs
-
-        # TODO: remove, obsolete
-        # print("  Smoothing: Closing (3 mm) ...")
-        # self._smoothSegment(segmentation_node, seg_id, kernel_size_mm=3.0, method="closing")
-        # print("  Smoothing: Opening (3 mm) ...")
-        # self._smoothSegment(segmentation_node, seg_id, kernel_size_mm=3.0, method="opening")
-
-        # print(f"  HU mask: removing voxels above {hu_max} HU ...")
-        # self._maskSegmentByHU(segmentation_node, seg_id, volume_node, hu_max=hu_max)
-
-        # TODO: remove, obsolete
-        # if remove_satellites:
-        #     print(f"  Satellite removal (min diameter {min_satellite_diameter_mm} mm) ...")
-        #     self._removeSatelliteRegions(segmentation_node, seg_id, min_satellite_diameter_mm)
+        if segment_color == None:
+            segment_color = self._getColorForActiveParameterNode("OrbitalPlane")
 
         seg = segmentation_node.GetSegmentation()
-        segment = seg.GetSegment(seg_id)
-        segment.SetName("IntraorbitalVolume")
-        segment.SetColor(*segment_color)
+        segment_volume = seg.GetSegment(seg_id)
+        segment_volume.SetName("IntraorbitalVolume")
+        segment_volume.SetColor(*segment_color)
+
+        mask_color = np.clip(np.multiply(segment_color, 2),0,1)
+
+        segment_mask = seg.GetSegment(mask_segment_id)
+        segment_mask.SetName("Mask")
+        segment_mask.SetColor(mask_color)
 
         disp = segmentation_node.GetDisplayNode()
         disp.SetOpacity3D(0.5)
@@ -2422,6 +2464,91 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         segmentation_node.CreateClosedSurfaceRepresentation()
         slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
 
+        """ =====================
+                Postprocessing
+            ===================== """
+
+        print("\n  Postprocessing segmentation...")
+
+        # Prepare the segmentation editor
+        segmentEditorWidget = self._prepareSegmentEditor(volume_node, segmentation_node, seg_id) 
+
+        # hide the mask segment, otherwise it will also be edited by JOIN_TAUBIN Smoothing
+        segmentation_node.GetDisplayNode().SetSegmentVisibility(mask_segment_id, False) 
+
+        # 1. Smoothin Joint 0.8 everywhere
+        smoothing_factor = 0.8
+        print(f"  - Smoothing (Joint Taubin) with a smoothing factor of {smoothing_factor}...", end="")
+        segmentEditorWidget.setActiveEffectByName("Smoothing")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("SmoothingMethod", "JOINT_TAUBIN")
+        effect.setParameter("JointTaubinSmoothingFactor", smoothing_factor)
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedEverywhere)
+        effect.parameterSetNode().SetOverwriteMode(slicer.vtkMRMLSegmentEditorNode.OverwriteNone)
+        effect.self().onApply()
+        time.sleep(1)
+        print(" Done")
+        
+        # 2. Smoothing Closing 1 mm for small irregularites
+        kernel_size = 1
+        print(f"  - Smoothing (Closing) with a kernel size of {smoothing_factor} mm...", end="")
+        segmentEditorWidget.setActiveEffectByName("Smoothing")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("SmoothingMethod", "MORPHOLOGICAL_CLOSING")
+        effect.setParameter("KernelSizeMm", kernel_size)
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedEverywhere)
+        effect.parameterSetNode().SetOverwriteMode(slicer.vtkMRMLSegmentEditorNode.OverwriteNone)
+        effect.self().onApply()
+        time.sleep(1)
+        print(" Done")
+
+        # 3. Threshold -1000 bis hu-max insidehsegment
+        print(f"  - Thresholding to remove intersection with bone (HU-Threshold {hu_max})...",  end="")
+        segmentEditorWidget.setActiveEffectByName("Threshold")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("MinimumThreshold",-1000)
+        effect.setParameter("MaximumThreshold", hu_max)
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedInsideVisibleSegments)
+        effect.self().onApply()
+        time.sleep(1)
+        print(" Done")
+
+        # 4. Smoothing Opening 8-10 mm inside segment
+        kernel_size = 8
+        print(f"  - Smoothing (Opening) with a kernel size of {kernel_size} mm...", end="")
+        segmentEditorWidget.setActiveEffectByName("Smoothing")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("SmoothingMethod", "MORPHOLOGICAL_OPENING")
+        effect.setParameter("KernelSizeMm", kernel_size)
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedEverywhere)
+        effect.self().onApply()
+        print(" Done")
+
+        msgBox = qt.QMessageBox(qt.QMessageBox.Information,
+                                "Segmentation complete",
+                                "Segmentation almost complete.<br /> If the Segmentation contains multiple "  
+                                "Islands select the Island within a slice View. Otherwise just continue by "
+                                "pressing the <i>Finish</i>-Button. If you want to inspect the segmentation "
+                                "before finishing click <i>Inspect</i>")
+        msgBoxButtonFinish = msgBox.addButton("Finish Segmentation", qt.QMessageBox.AcceptRole)
+        msgBoxButtonIsland = msgBox.addButton("Pick Island", qt.QMessageBox.ActionRole)
+        msgBoxButtonInspect = msgBox.addButton("Inspect", qt.QMessageBox.ActionRole)
+        msgBox.exec()
+
+        if (msgBox.clickedButton() == msgBoxButtonIsland):
+            # 4. Islands keep larges everywhere
+            print(f"  - Switching to Segment Editor", end="")
+            self.segmentationKeepSelectedIsland(volume_node, segmentation_node, seg_id)
+
+        else:
+            if (msgBox.clickedButton() == msgBoxButtonFinish):
+                # 5. Clip anterior border using the mask
+                print(f"  - Clipping anterior border...", end="")
+                self.segmentationPerformCutoff(volume_node, segmentation_node, seg_id, mask_segment_id)
+                print(" Done")
+            
+            segmentEditorWidget.setActiveEffectByName("NULL")
+
         print(f"\n{'─'*60}")
         print(f"  FM raw voxels          : {voxel_count:,}  ({volume_ml:.2f} ml before post-processing)")
         print(f"  Segment node           : {seg_node_name}")
@@ -2430,15 +2557,44 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         slicer.util.setSliceViewerLayers(background=volume_node)
 
         return {
-            "segmentation_node": segmentation_node,
-            "segment_id":        seg_id,
-            "volume_ml":         volume_ml,
-            "voxel_count":       voxel_count,
-            "seed_ras":          seed_ras,
-            "seed_node":         seed_node,
-            "offset_mm":         offset_used,
-            "hu_at_seed":        hu,
+            "segmentation_node":   segmentation_node,
+            "segment_id":          seg_id,
+            "volume_ml":           volume_ml,
+            "voxel_count":         voxel_count,
+            "seed_ras":            seed_ras,
+            "seed_node":           seed_node,
+            "offset_mm":           offset_used,
+            "hu_at_seed":          hu,
+            "voxel_exclusion_map": mask_segment_id
         }
+
+    def _prepareSegmentEditor(self, volume_node, segmentation_node, segment_id):
+        segmentEditorWidget = slicer.modules.segmenteditor.widgetRepresentation().self().editor    
+        segmentEditorWidget.setSegmentationNode(segmentation_node)
+        segmentEditorWidget.setSourceVolumeNode(volume_node)
+        segmentEditorNode = segmentEditorWidget.mrmlSegmentEditorNode()
+        segmentEditorNode.SetSelectedSegmentID(segment_id)
+
+        return segmentEditorWidget
+
+    def segmentationKeepSelectedIsland(self, volume_node, segmentation_node, segment_id):
+        segmentEditorWidget = self._prepareSegmentEditor(volume_node, segmentation_node, segment_id)
+
+        segmentEditorWidget.setActiveEffectByName("Islands")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("Operation", "KEEP_SELECTED_ISLAND")
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedEverywhere)
+
+    def segmentationPerformCutoff(self, volume_node, segmentation_node, segment_id, mask_segment_id):
+        segmentEditorWidget = self._prepareSegmentEditor(volume_node, segmentation_node, segment_id)
+
+        segmentEditorWidget.setActiveEffectByName("Logical operators")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("Operation","SUBTRACT")
+        effect.setParameter("ModifierSegmentID", mask_segment_id)
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedEverywhere)
+        effect.self().onApply()
+
 
     # ------------------------------------------------------------------
     # Hilfsfunktionen – Orbital Surface
@@ -2653,6 +2809,64 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         node.GetDisplayNode().SetSelectedColor(1.0, 0.8, 0.0)
         node.GetDisplayNode().SetGlyphScale(3.0)
         return node
+    
+    def _keepIslandAtSeed(self, segmentation_node, segment_id, seed_ras):
+        """ Copies the Behaviour of the Islands-Segment-Effect, but uses the seed RAS vor selecting the island
+
+        :param segmentation_node: _description_
+        :param segment_id: _description_
+        :param seed_ras: _description_
+        """
+
+        segment = segmentation_node.GetSegment(segment_id)        
+        # selectedSegmentLabelmap = segment.GetRepresentation("Binary labelmap")
+        # We need to know exactly the value of the segment voxels, apply threshold to make force the selected label value
+        labelValue = 1
+        backgroundValue = 0
+
+        labelmapVolumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode")
+        slicer.modules.segmentations.logic().ExportSegmentsToLabelmapNode(segmentation_node, segment_id, labelmapVolumeNode)
+
+        segmentImageData = labelmapVolumeNode.GetImageData()
+
+        thresh = vtk.vtkImageThreshold()
+        thresh.SetInputData(segmentImageData)
+        thresh.ThresholdByLower(0)
+        thresh.SetInValue(backgroundValue)
+        thresh.SetOutValue(labelValue)
+        thresh.SetOutputScalarType(segmentImageData.GetScalarType())
+        thresh.Update()
+
+        # Create oriented image data from output
+        import vtkSegmentationCorePython as vtkSegmentationCore # pyright: ignore[reportMissingImports]
+
+        inputLabelImage = slicer.vtkOrientedImageData()
+        inputLabelImage.ShallowCopy(thresh.GetOutput())
+        selectedSegmentLabelmapImageToWorldMatrix = vtk.vtkMatrix4x4()
+        segmentImageData.GetImageToWorldMatrix(selectedSegmentLabelmapImageToWorldMatrix)
+        inputLabelImage.SetImageToWorldMatrix(selectedSegmentLabelmapImageToWorldMatrix)
+
+        # Process segmentation
+        floodFillingFilter = vtk.vtkImageThresholdConnectivity()
+        floodFillingFilter.SetInputData(inputLabelImage)
+        seedPoints = vtk.vtkPoints()
+        origin = inputLabelImage.GetOrigin()
+        spacing = inputLabelImage.GetSpacing()
+        seedPoints.InsertNextPoint(origin[0] + seed_ras[0], origin[1] + seed_ras[1] * spacing[1], origin[2] + seed_ras[2])
+        floodFillingFilter.SetSeedPoints(seedPoints)
+        floodFillingFilter.ThresholdBetween(1, 1)
+        floodFillingFilter.SetInValue(1)
+        floodFillingFilter.SetOutValue(0)
+        floodFillingFilter.Update()
+
+        # Import segment from vtkImageData
+        segmentImageData.DeepCopy(floodFillingFilter.GetOutput())
+        slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(labelmapVolumeNode, segmentation_node, segment_id)
+
+        # Cleanup temporary nodes
+        slicer.mrmlScene.RemoveNode(labelmapVolumeNode.GetDisplayNode().GetColorNode())
+        slicer.mrmlScene.RemoveNode(labelmapVolumeNode)
+
 
     def _fastMarchingSegmentation(
         self,
@@ -2688,6 +2902,9 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # sicher dass wir float32-Werte (HU) und nicht integer-Rohdaten verwenden.
         sitk_image = sitkUtils.PullVolumeFromSlicer(volume_node)
         hu_arr = sitk.GetArrayFromImage(sitk.Cast(sitk_image, sitk.sitkFloat32))
+
+        # treat intraorbital air like soft-tissue
+        hu_arr[hu_arr < -400] = 0
 
         # --- 2. Speed-Image aus HU ableiten ---
         # Gaußkurve mit Maximum bei HU=0: Weichgewebe ≈ 1, Knochen/Luft ≈ 0.
@@ -2795,6 +3012,8 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
                 (depth > orbital_depth_mm) |
                 (lateral > orbital_radius_mm + radius_margin_mm)
             )
+        
+        outside = outside.reshape(Nz, Ny, Nx)
 
         # --- 11. Posterior-Boost anwenden ---
         # Orbitales Fett weiter posterior hat oft niedrigen Kontrast → Front stoppt zu früh.
@@ -2807,7 +3026,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # --- 12. Ausgeschlossene Voxel als harte Barriere setzen ---
         # speed=1e-4 ist praktisch null: die Front kann diese Voxel zwar theoretisch
         # erreichen, aber erst nach extrem langer Reisezeit (weit jenseits stopping_value).
-        speed_arr[outside.reshape(Nz, Ny, Nx)] = 1e-4
+        # speed_arr[outside] = 1e-4
 
         # --- 13. Speed-Image zurück nach SimpleITK konvertieren ---
         # CopyInformation überträgt Origin, Spacing und Direction, damit der
@@ -2897,9 +3116,23 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # --- 17. Ergebnis als Segment in Slicer importieren ---
         # Weg: NumPy → SimpleITK → LabelMapVolumeNode → SegmentationNode.
         # Der temporäre LabelMap-Node wird nach dem Import wieder entfernt.
+        seg_id = self._convertArrayToSegment(binary_arr, sitk_image, segmentation_node)
+        mask_segment_id = self._convertArrayToSegment(np.multiply(outside,1), sitk_image, segmentation_node)
+
+        return seg_id, volume_ml, voxel_count, mask_segment_id
+    
+    def _convertArrayToSegment(self, binary_arr, sitk_image, segmentation_node):
+        """Converts a 3-dimensional array to a 3D Slicer Segment
+
+        :param binary_arr: 3-dimensional array
+        :param sitk_image: ITK-Image object, that contains the volume properties
+        :param segmentation_node: 3D Slicer segmentation node, that the segment will be added to
+        :return: Segment-ID of the newly created Segment
+        """        
         binary_sitk = sitk.GetImageFromArray(binary_arr)
         binary_sitk.CopyInformation(sitk_image)
 
+        # create Segment for intraorbital Volume
         lm_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode", "TmpFMLabelmap")
         sitkUtils.PushVolumeToSlicer(binary_sitk, lm_node)
         slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(
@@ -2912,7 +3145,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         seg.GetSegmentIDs(seg_ids)
         seg_id = seg_ids.GetValue(seg_ids.GetNumberOfValues() - 1)
 
-        return seg_id, volume_ml, voxel_count
+        return seg_id
 
     def _smoothSegment(self, segmentation_node, seg_id, kernel_size_mm: float = 3.0, method: str = "closing"):
         """Applies morphological closing or opening to the binary labelmap using an ellipsoidal kernel scaled to physical mm.
@@ -2921,7 +3154,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         treatment (outside = background) does not erode voxels at the tight
         bounding-box edge, which would create an artificial flat cut.
         """
-        import vtk.util.numpy_support as nps
+        import vtk.util.numpy_support as nps # pyright: ignore[reportMissingImports]
         from scipy import ndimage
 
         seg = segmentation_node.GetSegmentation()
@@ -2969,7 +3202,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         This mask restores the HU constraint by zeroing out any voxel where the
         original CT intensity is above hu_max.
         """
-        import vtk.util.numpy_support as nps
+        import vtk.util.numpy_support as nps # type: ignore
         import sitkUtils
         import SimpleITK as sitk
 
@@ -3026,7 +3259,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         is the component volume in mm³.  Components below the threshold are deleted;
         the main body (largest component) is never touched.
         """
-        import vtk.util.numpy_support as nps
+        import vtk.util.numpy_support as nps # pyright: ignore[reportMissingImports]
         from scipy import ndimage
 
         seg      = segmentation_node.GetSegmentation()
@@ -3213,3 +3446,35 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         seg_node.CreateClosedSurfaceRepresentation()
 
         return seg_node
+    
+    def _activeParameterNodeIndex(self) -> int:
+        """Returns the 0-based index of the active PN among all module PNs, or -1."""
+        if self._parameterNode is None:
+            return -1
+        
+        active = self._parameterNode.parameterNode
+        all_parameter_nodes = self.getAllParameterNodes()
+
+        # iterate over alle parameter nodes and return the index of
+        # the currently active node
+        for i in range(len(all_parameter_nodes)):
+            if active.GetID() == all_parameter_nodes[i].parameterNode.GetID():
+                return i
+        
+        # if no node is found return -1
+        return -1
+
+    def _getColorForActiveParameterNode(self, objectType):
+        activeParameterNodeIndex = self._activeParameterNodeIndex()
+
+        if activeParameterNodeIndex == -1:
+            return self.COLOR_DEFAULT;
+
+        colorTuple = self.COLOR_DEFAULT
+
+        if objectType == "Segmentation":
+            colorTuple = self.COLORS_SEGMENTATION[activeParameterNodeIndex]
+        elif objectType == "OrbitalPlane":
+            colorTuple = self.COLORS_ORBITAL_PLANE[activeParameterNodeIndex]
+
+        return colorTuple;

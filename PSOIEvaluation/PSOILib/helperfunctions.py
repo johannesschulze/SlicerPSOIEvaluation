@@ -12,6 +12,8 @@ import scipy
 import collections
 import sys
 
+import qt
+
 import SegmentStatistics
 
 COLOR_PREOP		= (0.5, 0.5, 0.5)	    # Grey
@@ -319,7 +321,7 @@ def openNew3DWindow(width=500, height=500, layoutName = "New3DView", layoutLabel
     viewWidget = slicer.qMRMLThreeDWidget()
     viewWidget.setMRMLScene(slicer.mrmlScene)
     viewWidget.setMRMLViewNode(viewNode)
-    viewWidget.size=qt.QSize(1000,1000)
+    viewWidget.size = qt.QSize(1000,1000)
     viewWidget.show()
 
     return viewWidget
@@ -397,6 +399,8 @@ def showVolumeRendering(
     :param preset: 3D-Slicer Volume Rendering Preset. Defaults to "CT-Bone"
     :param hideSoftTissue: Adapt the gradient transfer function to only show bone
     :param thresholds: Threshold to be used for setting up te gradient transfer function
+
+    :returns Display Node of the Volume Rendering
     """
     volRenLogic = slicer.modules.volumerendering.logic()
     displayNode = volRenLogic.CreateDefaultVolumeRenderingNodes(volumeNode)
@@ -413,6 +417,8 @@ def showVolumeRendering(
 
     # Show volume rendering
     displayNode.SetVisibility(True)
+
+    return displayNode
 
 def alignCameraToBoundingBox(boxNode, axis = 0, viewWidget = None):
     
