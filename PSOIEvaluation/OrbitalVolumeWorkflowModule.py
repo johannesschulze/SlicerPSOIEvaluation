@@ -3449,16 +3449,18 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     
     def _activeParameterNodeIndex(self) -> int:
         """Returns the 0-based index of the active PN among all module PNs, or -1."""
-        if self._parameterNode is None:
+        parameterNode = self.getParameterNode()
+
+        if parameterNode is None:
             return -1
         
-        active = self._parameterNode.parameterNode
+        active = parameterNode.parameterNode
         all_parameter_nodes = self.getAllParameterNodes()
 
         # iterate over alle parameter nodes and return the index of
         # the currently active node
         for i in range(len(all_parameter_nodes)):
-            if active.GetID() == all_parameter_nodes[i].parameterNode.GetID():
+            if active.GetID() == all_parameter_nodes[i].GetID():
                 return i
         
         # if no node is found return -1
