@@ -1,7 +1,7 @@
 ---
 title: Orbital Volume Workflow
 author: Johannes Schulze
-date: 2026-05-05
+date: 2026-05-12
 lang: de
 ---
 
@@ -155,11 +155,13 @@ Der Algorithmus spiegelt das Gegenseiten-Volumen und zeigt es als blaue Vorschau
 > **Screenshot-Platzhalter:**  
 > `[Screenshot: Positioniertes Template in der sagittalen Schichtansicht mit sichtbaren Interaction-Handles]`
 
-## 2.4 Posteriore Begrenzung (optional)
+## 2.4 Posteriore Begrenzung (erforderlich)
 
 Klicken Sie auf **P** neben dem Feld **Orbital Depth (mm)**, um einen Markup-Punkt zu setzen.  
-Platzieren Sie diesen an der posterioren Orbitawand.  
+Platzieren Sie diesen an der posterioren Orbitawand (z. B. am Apex orbitae in der sagittalen Ansicht).  
 Das Modul berechnet daraus automatisch die Tiefe der Orbita und trägt den Wert in das Feld **Orbital Depth (mm)** ein.
+
+> **Hinweis:** Ohne gesetzten Cutoff-Punkt kann die Segmentierung nicht gestartet werden.
 
 > **Screenshot-Platzhalter:**  
 > `[Screenshot: Posteriorer Markup-Punkt in der sagittalen Ansicht, Orbita-Tiefe im Feld]`
@@ -185,11 +187,32 @@ Aktivieren Sie **Remove satellite regions**, um nach der Segmentierung kleine is
 ## 2.7 Segmentierung starten
 
 Klicken Sie auf **Segment Volume**.  
+Während der Berechnung zeigt ein Fortschrittsdialog den aktuellen Verarbeitungsschritt an (Fast Marching, Glättung, HU-Schwellenwert etc.).
+
+Nach Abschluss der automatischen Nachbearbeitung erscheint ein Dialog mit drei Optionen:
+
+| Schaltfläche | Funktion |
+|---|---|
+| **Finish Segmentation** | Anteriore Kante wird anhand der Eintrittsebene beschnitten (empfohlen für Standardfälle) |
+| **Pick Island** | Öffnet den Segment Editor zum manuellen Auswählen einer Insel, falls die Segmentierung aus mehreren Teilen besteht |
+| **Inspect** | Schließt den Dialog ohne Cutoff – zum manuellen Prüfen vor dem Abschluss |
+
 Das Ergebnis (Volumen in ml, Voxelanzahl, HU am Seed) wird im Modul angezeigt.  
-Die Schichtansichten springen automatisch zum Zentrum der Segmentierung.
+Die Schichtansichten zeigen automatisch das segmentierte CT als Hintergrund.
 
 > **Screenshot-Platzhalter:**  
 > `[Screenshot: Abgeschlossene Segmentierung in axialer und koronarer Ansicht, Ergebnis-Label sichtbar]`
+
+## 2.8 Nachbearbeitung nach der Segmentierung
+
+Nach der Segmentierung stehen zwei Schaltflächen zur manuellen Nachbearbeitung bereit:
+
+| Schaltfläche | Funktion |
+|---|---|
+| **Pick Island** | Öffnet den Segment Editor und wartet auf die Auswahl einer Insel in einer Schichtansicht. Die ausgewählte Insel wird behalten, alle anderen Teile des Segments werden entfernt. |
+| **Perform Cutoff** | Beschneidet das Segment anterior anhand der Eintrittsebene (entspricht „Finish Segmentation" im Dialog). Sinnvoll, wenn bei **Inspect** zunächst keine automatische Beschneidung erfolgt ist. |
+
+Diese Funktionen wirken auf die Segmentierung der aktuell aktiven Seite.
 
 ### Segmentierungs-Node manuell zuweisen
 
@@ -200,12 +223,12 @@ Die Auswahl **„(none)"** hebt die Zuweisung auf.
 
 > **Anwendungsfall:** Wenn eine Segmentierung extern erstellt oder aus einer anderen Sitzung geladen wurde und dem Workflow-Parameter-Set zugeordnet werden soll.
 
-## 2.8 Manuelle Nachbearbeitung (optional)
+## 2.9 Manuelle Nachbearbeitung (optional)
 
 Klicken Sie auf **Edit in Segment Editor (Scissors)**, um die Segmentierung manuell zu korrigieren.  
 Das Volumen wird nach der Bearbeitung automatisch neu berechnet.
 
-## 2.9 Ergebnisse exportieren
+## 2.10 Ergebnisse exportieren
 
 Klicken Sie auf **Export Results (Excel)**.  
 Das Modul speichert eine Datei `results_orbital_volume.xlsx` im Verzeichnis des CT-Volumes des aktiven Parameter-Sets.
@@ -251,7 +274,7 @@ Beim wiederholten Export werden vorhandene Zeilen der betreffenden Parameter-Set
 
 | Problem | Mögliche Ursache | Lösung |
 |---------|-----------------|--------|
-| Segmentierung läuft in die Nasennebenhöhlen | Stopping Value zu hoch | Wert auf 12–15 reduzieren |
+| Segmentierung läuft in die Nasennebenhöhlen | Stopping Value zu hoch oder Eintrittsebenen-Mesh nicht korrekt geschlossen | Stopping Value auf 12–15 reduzieren; Orbital-Plane-Mesh prüfen |
 | Sehr kleines Segment bei Modell-Modus | Skalierung zu stark oder Modell außerhalb CT | Position Model erneut klicken, Template prüfen |
 | Kein Ergebnis nach Export | CT-Volume des aktiven Parameter-Sets hat keinen Dateipfad | CT-Datei auf Festplatte speichern oder Ausgabeverzeichnis manuell wählen |
 | Export enthält nicht alle Fälle | Weitere Fälle sind in anderen Parameter-Sets | Sicherstellen, dass alle Parameter-Sets das Attribut „ModuleName" tragen (wird beim Erstellen im Modul automatisch gesetzt) |

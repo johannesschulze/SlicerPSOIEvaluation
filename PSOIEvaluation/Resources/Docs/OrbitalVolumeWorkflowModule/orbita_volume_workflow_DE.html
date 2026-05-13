@@ -150,9 +150,9 @@ Workflow</h1>
       id="toc-hu-fenster-einstellen">2.2 HU-Fenster einstellen</a></li>
       <li><a href="#seed-einstellungen" id="toc-seed-einstellungen">2.3
       Seed-Einstellungen</a></li>
-      <li><a href="#posteriore-begrenzung-optional"
-      id="toc-posteriore-begrenzung-optional">2.4 Posteriore Begrenzung
-      (optional)</a></li>
+      <li><a href="#posteriore-begrenzung-erforderlich"
+      id="toc-posteriore-begrenzung-erforderlich">2.4 Posteriore
+      Begrenzung (erforderlich)</a></li>
       <li><a href="#fast-marching-parameter"
       id="toc-fast-marching-parameter">2.5
       Fast-Marching-Parameter</a></li>
@@ -161,11 +161,14 @@ Workflow</h1>
       Satelliten entfernen</a></li>
       <li><a href="#segmentierung-starten"
       id="toc-segmentierung-starten">2.7 Segmentierung starten</a></li>
+      <li><a href="#nachbearbeitung-nach-der-segmentierung"
+      id="toc-nachbearbeitung-nach-der-segmentierung">2.8
+      Nachbearbeitung nach der Segmentierung</a></li>
       <li><a href="#manuelle-nachbearbeitung-optional"
-      id="toc-manuelle-nachbearbeitung-optional">2.8 Manuelle
+      id="toc-manuelle-nachbearbeitung-optional">2.9 Manuelle
       Nachbearbeitung (optional)</a></li>
       <li><a href="#ergebnisse-exportieren"
-      id="toc-ergebnisse-exportieren">2.9 Ergebnisse
+      id="toc-ergebnisse-exportieren">2.10 Ergebnisse
       exportieren</a></li>
       </ul></li>
       <li><a href="#tipps-und-hinweise"
@@ -463,13 +466,18 @@ Workflow</h1>
   <p><strong>Screenshot-Platzhalter:</strong><br />
   <code>[Screenshot: Positioniertes Template in der sagittalen Schichtansicht mit sichtbaren Interaction-Handles]</code></p>
   </blockquote>
-  <h2 id="posteriore-begrenzung-optional">2.4 Posteriore Begrenzung
-  (optional)</h2>
+  <h2 id="posteriore-begrenzung-erforderlich">2.4 Posteriore Begrenzung
+  (erforderlich)</h2>
   <p>Klicken Sie auf <strong>P</strong> neben dem Feld <strong>Orbital
   Depth (mm)</strong>, um einen Markup-Punkt zu setzen.<br />
-  Platzieren Sie diesen an der posterioren Orbitawand.<br />
+  Platzieren Sie diesen an der posterioren Orbitawand (z. B. am Apex
+  orbitae in der sagittalen Ansicht).<br />
   Das Modul berechnet daraus automatisch die Tiefe der Orbita und trägt
   den Wert in das Feld <strong>Orbital Depth (mm)</strong> ein.</p>
+  <blockquote>
+  <p><strong>Hinweis:</strong> Ohne gesetzten Cutoff-Punkt kann die
+  Segmentierung nicht gestartet werden.</p>
+  </blockquote>
   <blockquote>
   <p><strong>Screenshot-Platzhalter:</strong><br />
   <code>[Screenshot: Posteriorer Markup-Punkt in der sagittalen Ansicht, Orbita-Tiefe im Feld]</code></p>
@@ -546,14 +554,81 @@ Workflow</h1>
   </table>
   <h2 id="segmentierung-starten">2.7 Segmentierung starten</h2>
   <p>Klicken Sie auf <strong>Segment Volume</strong>.<br />
-  Das Ergebnis (Volumen in ml, Voxelanzahl, HU am Seed) wird im Modul
+  Während der Berechnung zeigt ein Fortschrittsdialog den aktuellen
+  Verarbeitungsschritt an (Fast Marching, Glättung, HU-Schwellenwert
+  etc.).</p>
+  <p>Nach Abschluss der automatischen Nachbearbeitung erscheint ein
+  Dialog mit drei Optionen:</p>
+  <table>
+  <colgroup>
+  <col style="width: 50%" />
+  <col style="width: 50%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Schaltfläche</th>
+  <th>Funktion</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Finish Segmentation</strong></td>
+  <td>Anteriore Kante wird anhand der Eintrittsebene beschnitten
+  (empfohlen für Standardfälle)</td>
+  </tr>
+  <tr>
+  <td><strong>Pick Island</strong></td>
+  <td>Öffnet den Segment Editor zum manuellen Auswählen einer Insel,
+  falls die Segmentierung aus mehreren Teilen besteht</td>
+  </tr>
+  <tr>
+  <td><strong>Inspect</strong></td>
+  <td>Schließt den Dialog ohne Cutoff – zum manuellen Prüfen vor dem
+  Abschluss</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>Das Ergebnis (Volumen in ml, Voxelanzahl, HU am Seed) wird im Modul
   angezeigt.<br />
-  Die Schichtansichten springen automatisch zum Zentrum der
-  Segmentierung.</p>
+  Die Schichtansichten zeigen automatisch das segmentierte CT als
+  Hintergrund.</p>
   <blockquote>
   <p><strong>Screenshot-Platzhalter:</strong><br />
   <code>[Screenshot: Abgeschlossene Segmentierung in axialer und koronarer Ansicht, Ergebnis-Label sichtbar]</code></p>
   </blockquote>
+  <h2 id="nachbearbeitung-nach-der-segmentierung">2.8 Nachbearbeitung
+  nach der Segmentierung</h2>
+  <p>Nach der Segmentierung stehen zwei Schaltflächen zur manuellen
+  Nachbearbeitung bereit:</p>
+  <table>
+  <colgroup>
+  <col style="width: 50%" />
+  <col style="width: 50%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Schaltfläche</th>
+  <th>Funktion</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Pick Island</strong></td>
+  <td>Öffnet den Segment Editor und wartet auf die Auswahl einer Insel
+  in einer Schichtansicht. Die ausgewählte Insel wird behalten, alle
+  anderen Teile des Segments werden entfernt.</td>
+  </tr>
+  <tr>
+  <td><strong>Perform Cutoff</strong></td>
+  <td>Beschneidet das Segment anterior anhand der Eintrittsebene
+  (entspricht „Finish Segmentation” im Dialog). Sinnvoll, wenn bei
+  <strong>Inspect</strong> zunächst keine automatische Beschneidung
+  erfolgt ist.</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>Diese Funktionen wirken auf die Segmentierung der aktuell aktiven
+  Seite.</p>
   <h3 id="segmentierungs-node-manuell-zuweisen">Segmentierungs-Node
   manuell zuweisen</h3>
   <p>Unterhalb der Schaltflächen <strong>Segment Volume</strong> /
@@ -570,12 +645,12 @@ Workflow</h1>
   erstellt oder aus einer anderen Sitzung geladen wurde und dem
   Workflow-Parameter-Set zugeordnet werden soll.</p>
   </blockquote>
-  <h2 id="manuelle-nachbearbeitung-optional">2.8 Manuelle
+  <h2 id="manuelle-nachbearbeitung-optional">2.9 Manuelle
   Nachbearbeitung (optional)</h2>
   <p>Klicken Sie auf <strong>Edit in Segment Editor (Scissors)</strong>,
   um die Segmentierung manuell zu korrigieren.<br />
   Das Volumen wird nach der Bearbeitung automatisch neu berechnet.</p>
-  <h2 id="ergebnisse-exportieren">2.9 Ergebnisse exportieren</h2>
+  <h2 id="ergebnisse-exportieren">2.10 Ergebnisse exportieren</h2>
   <p>Klicken Sie auf <strong>Export Results (Excel)</strong>.<br />
   Das Modul speichert eine Datei
   <code>results_orbital_volume.xlsx</code> im Verzeichnis des CT-Volumes
@@ -691,8 +766,10 @@ Workflow</h1>
   <tbody>
   <tr>
   <td>Segmentierung läuft in die Nasennebenhöhlen</td>
-  <td>Stopping Value zu hoch</td>
-  <td>Wert auf 12–15 reduzieren</td>
+  <td>Stopping Value zu hoch oder Eintrittsebenen-Mesh nicht korrekt
+  geschlossen</td>
+  <td>Stopping Value auf 12–15 reduzieren; Orbital-Plane-Mesh
+  prüfen</td>
   </tr>
   <tr>
   <td>Sehr kleines Segment bei Modell-Modus</td>
