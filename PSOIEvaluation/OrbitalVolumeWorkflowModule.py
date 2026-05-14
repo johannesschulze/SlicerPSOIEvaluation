@@ -95,8 +95,6 @@ class OrbitalVolumeWorkflowModuleParameterNode:
     autoSeedRight:      bool  = True
     seedOffsetLeft:     float = 10.0
     seedOffsetRight:    float = 10.0
-    orbitalDepthLeft:   float = 55.0
-    orbitalDepthRight:  float = 55.0
     radiusMarginLeft:   float =  2.0
     radiusMarginRight:  float =  2.0
     stoppingValueLeft:  float = 25.0
@@ -105,17 +103,18 @@ class OrbitalVolumeWorkflowModuleParameterNode:
     speedSigmaRight:    float = 70.0
     posteriorBoostLeft:  float = 2.5
     posteriorBoostRight: float = 2.5
-    showSeedLeft:           bool  = True
-    showSeedRight:          bool  = True
+    showSeedLeft:           bool  = False
+    showSeedRight:          bool  = False
     # 0 = manual, 1 = mirror contralateral, 2 = model-based
     seedModeLeft:            int   = 0
     seedModeRight:           int   = 0
+    # 'fastmarching' | 'threshold' | ''
+    segMethodLeft:           str   = ""
+    segMethodRight:          str   = ""
     modelSeedNodeLeft:       vtkMRMLSegmentationNode
     modelSeedNodeRight:      vtkMRMLSegmentationNode
     modelSeedTransformLeft:  vtkMRMLLinearTransformNode
     modelSeedTransformRight: vtkMRMLLinearTransformNode
-    posteriorMarkupLeft:     vtkMRMLMarkupsFiducialNode
-    posteriorMarkupRight:   vtkMRMLMarkupsFiducialNode
     posteriorCutoffNode:     vtkMRMLMarkupsFiducialNode   # shared, beide Seiten
     removeSatellitesLeft:   bool  = True
     removeSatellitesRight:  bool  = True
@@ -168,8 +167,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         # Segmentierungs-Nodes und Observer für automatische Volumen-Neuberechnung
         self._segNodes     = {True: None, False: None}
         self._segIds       = {True: None, False: None}
-        self._segObservers             = {True: None, False: None}
-        self._posteriorMarkupObservers = {True: None, False: None}
+        self._segObservers         = {True: None, False: None}
         self._cutoffMarkupObserver = None
         self._volumeUpdateSide = None
         self._applyingPreset = False
@@ -231,15 +229,13 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
         # Workflow-Buttons
         self.ui.createSurfaceButton.connect("clicked(bool)",    self.onCreateSurfaceButton)
-        self.ui.segmentVolumeButton.connect("clicked(bool)",    self.onSegmentVolumeButton)
+        self.ui.fastMarchingButton.connect("clicked(bool)", self.onFastMarchingButton)
+        self.ui.thresholdButton.connect("clicked(bool)",    self.onThresholdButton)
         self.ui.clearSideButton.connect("clicked(bool)",       self.onClearSideButton)
         self.ui.exportResultsButton.connect("clicked(bool)",   self.onExportResultsButton)
         self.ui.autoSeedCheckBox.connect("toggled(bool)",       self.onAutoSeedToggled)
         #self.ui.stepsToolbox.connect("currentChanged(int)",     self.onStepsToolboxCurrentChanged)
-    
-        self.ui.placePosteriorMarkupButton.connect("clicked(bool)", self.onPlacePosteriorMarkupButton)
-        self.ui.placePosteriorMarkupButton.setIcon(qt.QIcon(self.resourcePath("Icons/MarkupsFiducialMouseModePlace.png")))
-        
+       
         self.ui.placeCutoffButton.connect("clicked(bool)", self.onPlaceCutoffButton)
         self.ui.placeCutoffButton.setIcon(qt.QIcon(self.resourcePath("Icons/MarkupsFiducialMouseModePlace.png")))
 
@@ -320,11 +316,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             if node is not None and obs is not None:
                 node.RemoveObserver(obs)
         if self._parameterNode is not None:
-            for side, attr in [(True, "posteriorMarkupLeft"), (False, "posteriorMarkupRight")]:
-                markup = getattr(self._parameterNode, attr, None)
-                obs    = self._posteriorMarkupObservers.get(side)
-                if markup is not None and obs is not None:
-                    markup.RemoveObserver(obs)
             cutoff_node = getattr(self._parameterNode, "posteriorCutoffNode", None)
             if cutoff_node is not None and self._cutoffMarkupObserver is not None:
                 cutoff_node.RemoveObserver(self._cutoffMarkupObserver)
@@ -496,6 +487,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 "segTexts":     dict(self._segTexts),
                 "segNodes":     dict(self._segNodes),
                 "segIds":       dict(self._segIds),
+                "segVolumes":   dict(self._segVolumes),
             }
             # Observer vom alten Seg-Nodes lösen
             for side in [True, False]:
@@ -504,13 +496,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 if node is not None and obs is not None:
                     node.RemoveObserver(obs)
             self._segObservers = {True: None, False: None}
-            # Observer vom alten Posterior-Markup-Nodes lösen
-            for side, attr in [(True, "posteriorMarkupLeft"), (False, "posteriorMarkupRight")]:
-                markup = getattr(self._parameterNode, attr, None)
-                obs    = self._posteriorMarkupObservers.get(side)
-                if markup is not None and obs is not None:
-                    markup.RemoveObserver(obs)
-            self._posteriorMarkupObservers = {True: None, False: None}
             cutoff_node = getattr(self._parameterNode, "posteriorCutoffNode", None)
             if cutoff_node is not None and self._cutoffMarkupObserver is not None:
                 cutoff_node.RemoveObserver(self._cutoffMarkupObserver)
@@ -534,12 +519,14 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             self._segTexts     = s["segTexts"]
             self._segNodes     = s["segNodes"]
             self._segIds       = s["segIds"]
+            self._segVolumes   = s.get("segVolumes", {True: None, False: None})
         else:
             self._curveNodes   = {True: None, False: None}
             self._surfaceTexts = {True: "",   False: ""}
             self._segTexts     = {True: "",   False: ""}
             self._segNodes     = {True: None, False: None}
             self._segIds       = {True: None, False: None}
+            self._segVolumes   = {True: None, False: None}
 
         # Observer an vorhandene Seg-Nodes des neuen PN hängen
         self._segObservers = {True: None, False: None}
@@ -562,17 +549,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                     vtk.vtkCommand.ModifiedEvent,
                     lambda c, e, side=isLeft: self._onSegmentModified(side),
                 )
-
-        # Observer an vorhandene Posterior-Markup-Nodes des neuen PN hängen
-        for isLeft_pm, attr in [(True, "posteriorMarkupLeft"), (False, "posteriorMarkupRight")]:
-            markup = getattr(self._parameterNode, attr, None)
-            if markup is None:
-                continue
-            obs = markup.AddObserver(
-                vtk.vtkCommand.ModifiedEvent,
-                lambda c, e, side=isLeft_pm: self._onPosteriorMarkupModified(side),
-            )
-            self._posteriorMarkupObservers[isLeft_pm] = obs
 
         # Observer an vorhandenen Cutoff-Markup-Node hängen + Selector synchronisieren
         cutoff_node = getattr(self._parameterNode, "posteriorCutoffNode", None)
@@ -678,7 +654,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self._parameterNode.__setattr__(f"huMax{s}",        self.ui.huMaxSpinBox.value)
         self._parameterNode.__setattr__(f"autoSeed{s}",     self.ui.autoSeedCheckBox.isChecked())
         self._parameterNode.__setattr__(f"seedOffset{s}",   self.ui.seedOffsetSpinBox.value)
-        self._parameterNode.__setattr__(f"orbitalDepth{s}", self.ui.orbitalDepthSpinBox.value)
         self._parameterNode.__setattr__(f"radiusMargin{s}", self.ui.radiusMarginSpinBox.value)
         self._parameterNode.__setattr__(f"stoppingValue{s}",self.ui.stoppingValueSpinBox.value)
         self._parameterNode.__setattr__(f"speedSigma{s}",   self.ui.speedSigmaSpinBox.value)
@@ -704,7 +679,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.autoSeedCheckBox.setChecked(autoSeed)
         self.ui.seedOffsetSpinBox.setValue(   self._parameterNode.__getattribute__(f"seedOffset{s}"))
         self.ui.seedOffsetSpinBox.setEnabled(not autoSeed)
-        self.ui.orbitalDepthSpinBox.setValue( self._parameterNode.__getattribute__(f"orbitalDepth{s}"))
         self.ui.radiusMarginSpinBox.setValue( self._parameterNode.__getattribute__(f"radiusMargin{s}"))
         self.ui.stoppingValueSpinBox.setValue(self._parameterNode.__getattribute__(f"stoppingValue{s}"))
         self.ui.speedSigmaSpinBox.setValue(   self._parameterNode.__getattribute__(f"speedSigma{s}"))
@@ -751,7 +725,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             return
         src = "Left" if fromLeft else "Right"
         dst = "Right" if fromLeft else "Left"
-        for param in ["huMin", "huMax", "autoSeed", "seedOffset", "orbitalDepth",
+        for param in ["huMin", "huMax", "autoSeed", "seedOffset", 
                       "radiusMargin", "stoppingValue", "speedSigma", "posteriorBoost",
                       "showSeed", "seedMode", "removeSatellites", "satelliteDiam"]:
             val = self._parameterNode.__getattribute__(f"{param}{src}")
@@ -1492,6 +1466,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             ws.title = "Intraorbital Volume"
             headers = [
                 "Parameter-Node", "CT-Volume", "Seite", "Seed-Modus",
+                "Segmentierungsmethode",
                 "HU Min", "HU Max",
                 "Stopping Value (FM Limit)", "Speed Sigma (σ)",
                 "Posteriorer Boost", "Satelliten entfernen",
@@ -1500,7 +1475,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             ]
             ws.append(headers)
             # Spaltenbreiten
-            for col, width in enumerate([28, 22, 8, 24, 8, 8, 24, 16, 18, 22, 22, 24, 18], start=1):
+            for col, width in enumerate([28, 22, 8, 24, 22, 8, 8, 24, 16, 18, 22, 22, 24, 18], start=1):
                 ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
 
         seed_mode_labels = {0: "Manuell", 1: "Gegenseite gespiegelt", 2: "Modellbasiert"}
@@ -1513,23 +1488,26 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             pn_vol_node = pn.ctVolume
             pn_ct_name = pn_vol_node.GetName() if pn_vol_node else "–"
 
-            # Compute volumes for both sides
+            # Compute volumes for both sides directly from the segmentation nodes.
+            # Always recompute (never use the in-memory cache) so that volumes are
+            # consistent regardless of which PN was last active.
             vols = {}
             for isLeft in [True, False]:
                 seg_node = (pn.segmentationNodeLeft if isLeft else pn.segmentationNodeRight)
                 if seg_node is None:
                     vols[isLeft] = None
                     continue
-                # Use cached value if this is the active PN
-                vol = None
-                if (pn.parameterNode is self._parameterNode.parameterNode):
-                    vol = self._segVolumes.get(isLeft)
-                if vol is None:
-                    seg = seg_node.GetSegmentation()
-                    if seg.GetNumberOfSegments() > 0:
-                        seg_id = seg.GetNthSegmentID(0)
-                        vol, _voxels = self._calculateVolumeFromSegment(seg_node, seg_id)
-                vols[isLeft] = vol
+                seg = seg_node.GetSegmentation()
+                seg_id = None
+                for i in range(seg.GetNumberOfSegments()):
+                    if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
+                        seg_id = seg.GetNthSegmentID(i)
+                        break
+                if seg_id is None:
+                    vols[isLeft] = None
+                else:
+                    vol, _vox = self._calculateVolumeFromSegment(seg_node, seg_id)
+                    vols[isLeft] = vol
 
             for isLeft in [True, False]:
                 seg_node = (pn.segmentationNodeLeft if isLeft else pn.segmentationNodeRight)
@@ -1545,11 +1523,15 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 else:
                     ratio = None
 
+                method_raw = pn.__getattribute__(f"segMethod{s}")
+                method_label = {"fastmarching": "Fast Marching",
+                                "threshold":    "Threshold"}.get(method_raw, "–")
                 row = [
                     pn_name,
                     pn_ct_name,
                     "Links" if isLeft else "Rechts",
                     seed_mode_labels.get(pn.__getattribute__(f"seedMode{s}"), "–"),
+                    method_label,
                     pn.__getattribute__(f"huMin{s}"),
                     pn.__getattribute__(f"huMax{s}"),
                     pn.__getattribute__(f"stoppingValue{s}"),
@@ -1627,7 +1609,13 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
             self._nextStep()
 
-    def onSegmentVolumeButton(self) -> None:
+    def onFastMarchingButton(self) -> None:
+        self._runSegmentation('fastmarching')
+
+    def onThresholdButton(self) -> None:
+        self._runSegmentation('threshold')
+
+    def _runSegmentation(self, method: str) -> None:
         with slicer.util.tryWithErrorDisplay(_("Error during volume segmentation."), waitCursor=True):
             volume_node = self.ui.ctVolumeSelector.currentNode()
             plane_model = self.ui.planeModelSelector.currentNode()
@@ -1637,11 +1625,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             if plane_model is None:
                 raise ValueError(_("Please select an orbital plane (mesh)."))
 
-            seed_offset = (
-                None if self.ui.autoSeedCheckBox.isChecked()
-                else self.ui.seedOffsetSpinBox.value
-            )
-
             isLeft = self._parameterNode.sideIsLeft
             self._saveParamsForSide(isLeft)
             existing_seg  = (self._parameterNode.segmentationNodeLeft
@@ -1649,58 +1632,13 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             existing_seed = (self._parameterNode.seedNodeLeft
                              if isLeft else self._parameterNode.seedNodeRight)
 
-            # Bestehende Nodes nur wiederverwenden wenn sie zum aktuellen CT gehören.
-            # Bei neuem ParameterNode oder gewechseltem CT-Volume neue Nodes anlegen.
+            # Only reuse existing nodes when they belong to the current CT
             ct_prefix = volume_node.GetName()
             if existing_seg is not None and ct_prefix not in existing_seg.GetName():
                 existing_seg  = None
                 existing_seed = None
 
-            # --- Seed-Modus bestimmen ---
-            seed_mode = (1 if self.ui.rbSeedContralateral.isChecked()
-                         else 2 if self.ui.rbSeedModelBased.isChecked() else 0)
-
-            # Modus 1: Gegenseite spiegeln (ggf. mit manuell positioniertem Spiegel-Segment)
-            contra_seg_node = None
-            contra_seg_id   = None
-            model_seed_node = None
-            model_seed_id   = None
-            if seed_mode == 1:
-                s = "Left" if isLeft else "Right"
-                pos_node = getattr(self._parameterNode, f"contraPositionedNode{s}", None)
-                pos_tf   = getattr(self._parameterNode, f"contraPositionedTransform{s}", None)
-                if (pos_node is not None and slicer.mrmlScene.IsNodePresent(pos_node)
-                        and pos_tf is not None and slicer.mrmlScene.IsNodePresent(pos_tf)):
-                    # Verwende das manuell positionierte Spiegel-Segment als FM-Seed
-                    model_seed_node = pos_node
-                    pos_seg = pos_node.GetSegmentation()
-                    if pos_seg.GetNumberOfSegments() > 0:
-                        model_seed_id = pos_seg.GetNthSegmentID(0)
-                else:
-                    # Automatische Spiegelung (Standard-Pfad)
-                    contra_node = (self._parameterNode.segmentationNodeRight
-                                   if isLeft else self._parameterNode.segmentationNodeLeft)
-                    contra_side = not isLeft
-                    if contra_node is not None:
-                        contra_seg_node = contra_node
-                        contra_seg_id   = self._segIds.get(contra_side)
-                        if contra_seg_id is None:
-                            seg = contra_node.GetSegmentation()
-                            for i in range(seg.GetNumberOfSegments()):
-                                if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
-                                    contra_seg_id = seg.GetNthSegmentID(i)
-                                    break
-
-            # Modus 2: Modell-basierter Seed
-            if seed_mode == 2:
-                model_seed_node = (self._parameterNode.modelSeedNodeLeft if isLeft
-                                   else self._parameterNode.modelSeedNodeRight)
-                if model_seed_node is not None:
-                    seg = model_seed_node.GetSegmentation()
-                    if seg.GetNumberOfSegments() > 0:
-                        model_seed_id = seg.GetNthSegmentID(0)
-
-            # Posteriore Cutoff-Ebene (gemeinsam für beide Seiten)
+            # Posteriore Cutoff-Ebene
             cutoff_node = self._parameterNode.posteriorCutoffNode
             if cutoff_node is None or cutoff_node.GetNumberOfControlPoints() == 0:
                 raise ValueError(
@@ -1711,17 +1649,57 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             cutoff_node.GetNthControlPointPositionWorld(0, _cutoff_pt)
             posterior_cutoff_ras = np.array(_cutoff_pt)
 
-            active_mrml = self._parameterNode.parameterNode
+            # FM seed mode (only relevant for Fast Marching)
+            seed_offset      = (None if self.ui.autoSeedCheckBox.isChecked()
+                                else self.ui.seedOffsetSpinBox.value)
+            seed_mode        = (1 if self.ui.rbSeedContralateral.isChecked()
+                                else 2 if self.ui.rbSeedModelBased.isChecked() else 0)
+            contra_seg_node  = None
+            contra_seg_id    = None
+            model_seed_node  = None
+            model_seed_id    = None
+            if method == 'fastmarching':
+                if seed_mode == 1:
+                    s        = "Left" if isLeft else "Right"
+                    pos_node = getattr(self._parameterNode, f"contraPositionedNode{s}", None)
+                    pos_tf   = getattr(self._parameterNode, f"contraPositionedTransform{s}", None)
+                    if (pos_node is not None and slicer.mrmlScene.IsNodePresent(pos_node)
+                            and pos_tf is not None and slicer.mrmlScene.IsNodePresent(pos_tf)):
+                        model_seed_node = pos_node
+                        pos_seg = pos_node.GetSegmentation()
+                        if pos_seg.GetNumberOfSegments() > 0:
+                            model_seed_id = pos_seg.GetNthSegmentID(0)
+                    else:
+                        contra_node = (self._parameterNode.segmentationNodeRight
+                                       if isLeft else self._parameterNode.segmentationNodeLeft)
+                        if contra_node is not None:
+                            contra_seg_node = contra_node
+                            contra_seg_id   = self._segIds.get(not isLeft)
+                            if contra_seg_id is None:
+                                seg = contra_node.GetSegmentation()
+                                for i in range(seg.GetNumberOfSegments()):
+                                    if seg.GetNthSegment(i).GetName() == "IntraorbitalVolume":
+                                        contra_seg_id = seg.GetNthSegmentID(i)
+                                        break
+                if seed_mode == 2:
+                    model_seed_node = (self._parameterNode.modelSeedNodeLeft if isLeft
+                                       else self._parameterNode.modelSeedNodeRight)
+                    if model_seed_node is not None:
+                        seg = model_seed_node.GetSegmentation()
+                        if seg.GetNumberOfSegments() > 0:
+                            model_seed_id = seg.GetNthSegmentID(0)
+
+            active_mrml   = self._parameterNode.parameterNode
             segment_color = self.logic._getColorForActiveParameterNode("Segmentation", active_mrml)
 
             result = self.logic.segmentIntraorbitalVolume(
                 volume_node=volume_node,
                 plane_model=plane_model,
+                method=method,
                 hu_min=self.ui.huMinSpinBox.value,
                 hu_max=self.ui.huMaxSpinBox.value,
-                seed_offset_mm=seed_offset,
-                orbital_depth_mm=self.ui.orbitalDepthSpinBox.value,
                 radius_margin_mm=self.ui.radiusMarginSpinBox.value,
+                seed_offset_mm=seed_offset,
                 stopping_value=self.ui.stoppingValueSpinBox.value,
                 speed_sigma=self.ui.speedSigmaSpinBox.value,
                 posterior_boost=self.ui.posteriorBoostSpinBox.value,
@@ -1730,39 +1708,36 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 existing_seed_node=existing_seed,
                 contralateral_seg_node=contra_seg_node,
                 contralateral_seg_id=contra_seg_id,
-                posterior_cutoff_ras=posterior_cutoff_ras,
                 model_seed_node=model_seed_node,
                 model_seed_id=model_seed_id,
+                posterior_cutoff_ras=posterior_cutoff_ras,
                 remove_satellites=self.ui.removeSatellitesCheckBox.isChecked(),
                 min_satellite_diameter_mm=self.ui.satelliteDiamSpinBox.value,
                 segment_color=segment_color,
+                treat_air_as_soft_tissue=self.ui.treatAirAsSoftTissueCheckBox.isChecked(),
             )
 
             if isLeft:
                 self._parameterNode.segmentationNodeLeft = result["segmentation_node"]
-                self._parameterNode.seedNodeLeft         = result["seed_node"]
+                self._parameterNode.segMethodLeft = method
+                if result["seed_node"] is not None:
+                    self._parameterNode.seedNodeLeft = result["seed_node"]
             else:
                 self._parameterNode.segmentationNodeRight = result["segmentation_node"]
-                self._parameterNode.seedNodeRight         = result["seed_node"]
+                self._parameterNode.segMethodRight = method
+                if result["seed_node"] is not None:
+                    self._parameterNode.seedNodeRight = result["seed_node"]
 
-            # Place result nodes and any preview nodes in the side folder
             self._placeInFolder(result["segmentation_node"], isLeft)
-            self._placeInFolder(result["seed_node"], isLeft)
-
-            _seg_prefix = result["segmentation_node"].GetName().replace("_IntraorbitalSeg", "") + "_"
-
-            for _pname in [f"{_seg_prefix}ContraMirror_Full", f"{_seg_prefix}ModelSeed"]:
-                _pnode = slicer.mrmlScene.GetFirstNodeByName(_pname)
-                if _pnode is not None:
-                    self._placeInFolder(_pnode, isLeft)
+            if result["seed_node"] is not None:
+                self._placeInFolder(result["seed_node"], isLeft)
 
             # Keep the manual selector in sync
             wasBlocked = self.ui.segNodeSelector.blockSignals(True)
-
             self.ui.segNodeSelector.setCurrentNode(result["segmentation_node"])
             self.ui.segNodeSelector.blockSignals(wasBlocked)
 
-            # Finales Volumen aus dem fertigen Segment messen (nach Smoothing + Satellitenentfernung)
+            # Measure final volume after postprocessing
             seg_node_final = result["segmentation_node"]
             seg_id_final   = result["segment_id"]
             final_vol_ml, final_vox = self._calculateVolumeFromSegment(seg_node_final, seg_id_final)
@@ -1772,12 +1747,11 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             text = (
                 _("<b>Intraorbital volume: {vol:.2f} ml</b><br>"
                   "Voxels: {vox}<br>"
-                  "Seed offset: {off:.1f} mm &nbsp;|&nbsp; "
-                  "HU at seed: {hu:.0f}").format(
+                  "HU window: {hu_min} – {hu_max}").format(
                     vol=final_vol_ml,
                     vox=f"{final_vox:,}",
-                    off=result['offset_mm'],
-                    hu=result['hu_at_seed'],
+                    hu_min=self.ui.huMinSpinBox.value,
+                    hu_max=self.ui.huMaxSpinBox.value,
                 )
             )
             self._segTexts[isLeft] = text
@@ -1850,8 +1824,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 vtk.vtkCommand.ModifiedEvent,
                 lambda c, e, side=isLeft: self._onSegmentModified(side),
             )
-
-            self.ui.openSegmentEditorButton.setEnabled(True)
 
     def _nextStep(self) -> None:
         # if self.ui.stepsToolbox.currentIndex < self.ui.stepsToolbox.count - 1:
@@ -1937,16 +1909,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
 
         _remove(slicer.mrmlScene.GetFirstNodeByName(f"ContraPositionedCentering_{side_suffix}"))
 
-        # Posteriorer Markup dieser Seite
-        pm_node = getattr(self._parameterNode, f"posteriorMarkup{s}", None)
-        if pm_node is not None:
-            obs = self._posteriorMarkupObservers.get(isLeft)
-            if obs is not None:
-                pm_node.RemoveObserver(obs)
-                self._posteriorMarkupObservers[isLeft] = None
-        _remove(pm_node)
-        setattr(self._parameterNode, f"posteriorMarkup{s}", None)
-
         # Observer vom Segmentierungsknoten lösen
         seg_obs = self._segObservers.get(isLeft)
         if self._segNodes.get(isLeft) is not None and seg_obs is not None:
@@ -1963,7 +1925,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self._segIds[isLeft] = None
 
         self.ui.segmentationResultLabel.setText("")
-        self.ui.openSegmentEditorButton.setEnabled(False)
         wasBlocked = self.ui.segNodeSelector.blockSignals(True)
         self.ui.segNodeSelector.setCurrentNode(None)
         self.ui.segNodeSelector.blockSignals(wasBlocked)
@@ -1989,46 +1950,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         except Exception as exc:
             logging.warning(f"SegmentEditor setup failed: {exc}")
 
-    def onPlacePosteriorMarkupButton(self) -> None:
-        if self._parameterNode is None:
-            return
-        isLeft   = self._parameterNode.sideIsLeft
-        attr     = "posteriorMarkupLeft" if isLeft else "posteriorMarkupRight"
-        existing = getattr(self._parameterNode, attr, None)
-
-        # Reuse existing node (just clear the point) or create a fresh one
-        if existing is not None and slicer.mrmlScene.IsNodePresent(existing):
-            node = existing
-            node.RemoveAllControlPoints()
-        else:
-            side_suffix = "L" if isLeft else "R"
-            node = slicer.mrmlScene.AddNewNodeByClass(
-                "vtkMRMLMarkupsFiducialNode", f"PosteriorBoundary_{side_suffix}"
-            )
-            disp = node.GetDisplayNode()
-            disp.SetSelectedColor(1.0, 0.2, 0.2)
-            disp.SetColor(1.0, 0.2, 0.2)
-            disp.SetGlyphScale(3.0)
-            setattr(self._parameterNode, attr, node)
-            self._placeInFolder(node, isLeft)
-
-            # Attach observer so that depth updates automatically when the point moves
-            obs = node.AddObserver(
-                vtk.vtkCommand.ModifiedEvent,
-                lambda c, e, side=isLeft: self._onPosteriorMarkupModified(side),
-            )
-            old_obs = self._posteriorMarkupObservers.get(isLeft)
-            if old_obs is not None:
-                node.RemoveObserver(old_obs)
-            self._posteriorMarkupObservers[isLeft] = obs
-
-        node.SetMaximumNumberOfControlPoints(1)
-        selNode   = slicer.app.applicationLogic().GetSelectionNode()
-        selNode.SetActivePlaceNodeID(node.GetID())
-        selNode.SetActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
-        interNode = slicer.app.applicationLogic().GetInteractionNode()
-        interNode.SetCurrentInteractionMode(slicer.vtkMRMLInteractionNode.Place)
-
     def onSegNodeSelectorChanged(self, node) -> None:
         if self._parameterNode is None:
             return
@@ -2036,7 +1957,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         s = "Left" if isLeft else "Right"
         setattr(self._parameterNode, f"segmentationNode{s}", node)
         if node is not None:
-            self.ui.openSegmentEditorButton.setEnabled(True)
             seg = node.GetSegmentation()
             seg_id = None
             for i in range(seg.GetNumberOfSegments()):
@@ -2062,7 +1982,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
                 self._segTexts[isLeft] = ""
                 self.ui.segmentationResultLabel.setText("")
         else:
-            self.ui.openSegmentEditorButton.setEnabled(False)
             self._segNodes[isLeft] = None
             self._segIds[isLeft]   = None
             self._segTexts[isLeft] = ""
@@ -2136,18 +2055,48 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             segmentationNode,
             segment_id
         )
+
+        # After extrusion removal (morphological opening), automatically keep only
+        # the correct island so any disconnected pieces are dropped.
+        anchor = self._getIslandAnchor(isLeft)
+        if anchor is not None:
+            self.logic._keepIslandAtPoint(segmentationNode, segment_id, anchor)
+
         self._syncSegIdAndTriggerUpdate(isLeft, segmentationNode)
+
+    def _getIslandAnchor(self, isLeft: bool):
+        """Returns a RAS anchor point inside the correct orbital island, or None."""
+        plane = (self._parameterNode.planeModelLeft if isLeft
+                 else self._parameterNode.planeModelRight)
+        volume_node = self.ui.ctVolumeSelector.currentNode()
+        if plane is not None and volume_node is not None:
+            centroid, normal = self.logic._getPlaneFromModel(plane)
+            normal = self.logic._ensurePosteriorDirection(normal, centroid, volume_node)
+            return centroid + 10.0 * normal
+        seed_node = (self._parameterNode.seedNodeLeft if isLeft
+                     else self._parameterNode.seedNodeRight)
+        if seed_node is not None and seed_node.GetNumberOfControlPoints() > 0:
+            pt = [0.0, 0.0, 0.0]
+            seed_node.GetNthControlPointPositionWorld(0, pt)
+            return np.array(pt)
+        return None
 
     def onSelectIslandButton(self, clicked: bool):
         isLeft = self._parameterNode.sideIsLeft
-        segmentationNode = self._parameterNode.segmentationNodeLeft if isLeft else self._parameterNode.segmentationNodeRight
+        segmentationNode = (self._parameterNode.segmentationNodeLeft if isLeft
+                            else self._parameterNode.segmentationNodeRight)
+        if segmentationNode is None:
+            return
         segment_id = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName("IntraorbitalVolume")
+        if not segment_id:
+            return
 
-        self.logic.segmentationKeepSelectedIsland(
-            self._parameterNode.ctVolume,
-            segmentationNode,
-            segment_id
-        )
+        anchor = self._getIslandAnchor(isLeft)
+        if anchor is None:
+            slicer.util.warningDisplay(_("No orbital plane or seed available for island selection."))
+            return
+
+        self.logic._keepIslandAtPoint(segmentationNode, segment_id, anchor)
         self._syncSegIdAndTriggerUpdate(isLeft, segmentationNode)
 
     def onPerformCutoffButton(self, clicked: bool):
@@ -2188,37 +2137,6 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             f"R={pt[0]:.1f}  A={pt[1]:.1f}  S={pt[2]:.1f}"
         )
 
-    def _onPosteriorMarkupModified(self, isLeft: bool) -> None:
-        """Recomputes orbital depth from the posterior boundary markup and updates the spinbox."""
-        if self._parameterNode is None:
-            return
-        # Only update when we're viewing this side
-        if self._parameterNode.sideIsLeft != isLeft:
-            return
-        plane  = (self._parameterNode.planeModelLeft  if isLeft
-                  else self._parameterNode.planeModelRight)
-        markup = (self._parameterNode.posteriorMarkupLeft  if isLeft
-                  else self._parameterNode.posteriorMarkupRight)
-        volume = self.ui.ctVolumeSelector.currentNode()
-        if plane is None or markup is None or volume is None:
-            return
-        if markup.GetNumberOfControlPoints() == 0:
-            return
-
-        pt = [0.0, 0.0, 0.0]
-        markup.GetNthControlPointPositionWorld(0, pt)
-        centroid, normal = self.logic._getPlaneFromModel(plane)
-        normal = self.logic._ensurePosteriorDirection(normal, centroid, volume)
-        depth  = float(np.dot(np.array(pt) - centroid, normal))
-        # Clamp to spinbox limits
-        depth  = max(20.0, min(100.0, round(depth, 1)))
-
-        self.ui.orbitalDepthSpinBox.blockSignals(True)
-        self.ui.orbitalDepthSpinBox.setValue(depth)
-        self.ui.orbitalDepthSpinBox.blockSignals(False)
-        s = "Left" if isLeft else "Right"
-        self._parameterNode.__setattr__(f"orbitalDepth{s}", depth)
-
     def _onSegmentModified(self, isLeft: bool) -> None:
         self._volumeUpdateSide = isLeft
         self._volumeUpdateTimer.start()
@@ -2255,9 +2173,16 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             scalars = binary_lm.GetPointData().GetScalars()
             if scalars is None:
                 return 0.0, 0
-            arr         = nps.vtk_to_numpy(scalars)
-            voxel_count = int((arr > 0).sum())
-            spacing     = binary_lm.GetSpacing()
+            arr     = nps.vtk_to_numpy(scalars)
+            spacing = binary_lm.GetSpacing()
+            # After Segment Editor use, all segments share one collapsed labelmap
+            # with distinct label values.  GetLabelValue() (Slicer ≥ 5.4) returns
+            # the correct value; fall back to 1 for per-segment representations.
+            try:
+                label_value = segment.GetLabelValue()
+            except AttributeError:
+                label_value = 1
+            voxel_count = int((arr == label_value).sum())
             volume_ml   = voxel_count * spacing[0] * spacing[1] * spacing[2] / 1000.0
             return volume_ml, voxel_count
         except Exception as exc:
@@ -2458,38 +2383,42 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         self,
         volume_node,
         plane_model,
+        method: str = 'threshold',
         hu_min: int = -200,
         hu_max: int = 300,
-        seed_offset_mm=None,
-        orbital_depth_mm: float = 55.0,
         radius_margin_mm: float = 5.0,
+        # Fast Marching only
+        seed_offset_mm=None,
         stopping_value: float = 25.0,
         speed_sigma: float = 70.0,
         posterior_boost: float = 1.5,
-        show_seed: bool = True,
-        segment_color: tuple = None,
-        existing_segmentation_node=None,
+        show_seed: bool = False,
         existing_seed_node=None,
         contralateral_seg_node=None,
         contralateral_seg_id=None,
         model_seed_node=None,
         model_seed_id=None,
+        # Common
+        segment_color: tuple = None,
+        existing_segmentation_node=None,
         remove_satellites: bool = True,
         min_satellite_diameter_mm: float = 3.0,
         posterior_cutoff_ras=None,
+        treat_air_as_soft_tissue: bool = True,
     ) -> dict:
-        """
-        Segmentiert das intraorbitale Volumen via Fast Marching.
+        """Segments the intraorbital volume by Fast Marching or HU threshold.
 
-        Gibt ein dict zurück:
-          segmentation_node, segment_id, volume_ml, voxel_count,
-          seed_ras, offset_mm, hu_at_seed
+        method: 'fastmarching' | 'threshold'
+        Returns a dict with keys: segmentation_node, segment_id, volume_ml,
+        voxel_count, seed_node, voxel_exclusion_map.
         """
+        label = "Fast Marching" if method == 'fastmarching' else "Threshold"
         print(f"\n{'='*60}")
-        print(f"  Intraorbital Volume Segmentation")
+        print(f"  Intraorbital Volume Segmentation ({label})")
         print(f"{'='*60}")
         print(f"  CT volume    : {volume_node.GetName()}")
         print(f"  Entry plane  : {plane_model.GetName()}")
+        print(f"  HU window    : [{hu_min}, {hu_max}]")
 
         pd = qt.QProgressDialog(
             _("Vorbereitung..."), None, 0, 100, slicer.util.mainWindow()
@@ -2505,40 +2434,49 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         normal = self._ensurePosteriorDirection(normal, centroid, volume_node)
         orbital_radius_mm = self._estimateOrbitalRadius(plane_model)
 
+        if posterior_cutoff_ras is None:
+            raise ValueError(_("Bitte zuerst einen posterioren Cutoff-Punkt setzen."))
+        orbital_depth_mm = max(10.0, float(
+            np.dot(np.array(posterior_cutoff_ras) - centroid, normal)
+        ))
+
         print(f"  Centroid (RAS): {np.round(centroid, 1)}")
         print(f"  Normal vector : {np.round(normal, 3)}")
         print(f"  Orbital radius: {orbital_radius_mm:.1f} mm")
+        print(f"  Orbital depth : {orbital_depth_mm:.1f} mm (from cutoff markup)")
 
-        if seed_offset_mm is not None:
-            seed_ras = centroid + seed_offset_mm * normal
-            hu = self._getHUatRAS(seed_ras, volume_node)
-            offset_used = seed_offset_mm
-            print(f"  Seed offset   : {offset_used} mm (manual), HU={hu:.0f}")
-            if hu is None or not (hu_min <= hu <= hu_max):
-                print(f"  Warning: HU={hu} outside [{hu_min}, {hu_max}] - used anyway")
-        else:
-            seed_ras, offset_used, hu = self._findSeedPoint(
-                centroid, normal, volume_node, hu_min, hu_max
+        # --- Seed (Fast Marching only) ---
+        seed_node = None
+        seed_ras  = centroid  # fallback
+        offset_used = 0.0
+        hu_at_seed  = 0.0
+        if method == 'fastmarching':
+            ct_vol_name = volume_node.GetName()
+            side_suffix = plane_model.GetName().replace("_OrbitalPlane", "")
+            seed_name   = f"{ct_vol_name}_{side_suffix}_Seed"
+            if seed_offset_mm is not None:
+                seed_ras   = centroid + seed_offset_mm * normal
+                hu_at_seed = self._getHUatRAS(seed_ras, volume_node) or 0.0
+                offset_used = seed_offset_mm
+            else:
+                seed_ras, offset_used, hu_at_seed = self._findSeedPoint(
+                    centroid, normal, volume_node, hu_min, hu_max
+                )
+            print(f"  Seed offset   : {offset_used:.1f} mm, HU={hu_at_seed:.0f}")
+            seed_node = self._placeSeedFiducial(
+                seed_ras, name=seed_name, existing_node=existing_seed_node
             )
-            print(f"  Seed offset   : {offset_used:.1f} mm (auto), HU={hu:.0f}")
-
-        print(f"  Seed pos (RAS): {np.round(seed_ras, 1)}")
+            seed_node.GetDisplayNode().SetVisibility(1 if show_seed else 0)
 
         ct_vol_name   = volume_node.GetName()
         side_suffix   = plane_model.GetName().replace("_OrbitalPlane", "")
-        seed_name     = f"{ct_vol_name}_{side_suffix}_Seed"
         seg_node_name = f"{ct_vol_name}_{side_suffix}_IntraorbitalSeg"
-
-        seed_node = self._placeSeedFiducial(
-            seed_ras, name=seed_name, existing_node=existing_seed_node
-        )
-        seed_node.GetDisplayNode().SetVisibility(1 if show_seed else 0)
 
         if existing_segmentation_node is not None:
             segmentation_node = existing_segmentation_node
             segmentation_node.SetName(seg_node_name)
             segmentation_node.GetSegmentation().RemoveAllSegments()
-            print(f"  Existing segmentation node will be overwritten: {seg_node_name}")
+            print(f"  Reusing segmentation node: {seg_node_name}")
         else:
             segmentation_node = slicer.mrmlScene.AddNewNodeByClass(
                 "vtkMRMLSegmentationNode", seg_node_name
@@ -2547,44 +2485,56 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         segmentation_node.SetReferenceImageGeometryParameterFromVolumeNode(volume_node)
 
-        contra_info = " + contralateral mirror" if contralateral_seg_node is not None else ""
-        print(
-            f"\n  Fast Marching "
-            f"(stopping={stopping_value}, sigma={speed_sigma}, "
-            f"boost={posterior_boost}, "
-            f"cylinder: {orbital_depth_mm} mm x "
-            f"r={orbital_radius_mm:.1f}+{radius_margin_mm} mm"
-            f"{contra_info}) ..."
-        )
+        # --- Run the chosen algorithm ---
+        if method == 'fastmarching':
+            print(
+                f"\n  Fast Marching "
+                f"(stopping={stopping_value}, sigma={speed_sigma}, boost={posterior_boost}, "
+                f"cylinder: {orbital_depth_mm} mm x r={orbital_radius_mm:.1f}+{radius_margin_mm} mm) ..."
+            )
+            pd.setLabelText(_("Fast Marching Segmentierung..."))
+            pd.setValue(15)
+            slicer.app.processEvents()
 
-        pd.setLabelText(_("Fast Marching Segmentierung..."))
-        pd.setValue(15)
-        slicer.app.processEvents()
+            seg_id, volume_ml, voxel_count, mask_segment_id = self._fastMarchingSegmentation(
+                volume_node, segmentation_node, seed_ras,
+                centroid, normal, orbital_radius_mm,
+                orbital_depth_mm, radius_margin_mm,
+                plane_model=plane_model,
+                stopping_value=stopping_value,
+                speed_sigma=speed_sigma,
+                posterior_boost=posterior_boost,
+                contralateral_seg_node=contralateral_seg_node,
+                contralateral_seg_id=contralateral_seg_id,
+                model_seed_node=model_seed_node,
+                model_seed_id=model_seed_id,
+                posterior_cutoff_ras=posterior_cutoff_ras,
+                treat_air_as_soft_tissue=treat_air_as_soft_tissue,
+            )
+        else:
+            print(
+                f"\n  Threshold segmentation "
+                f"(cylinder: {orbital_depth_mm} mm x r={orbital_radius_mm:.1f}+{radius_margin_mm} mm) ..."
+            )
+            pd.setLabelText(_("Schwellenwert-Segmentierung..."))
+            pd.setValue(15)
+            slicer.app.processEvents()
 
-        seg_id, volume_ml, voxel_count, mask_segment_id = self._fastMarchingSegmentation(
-            volume_node, segmentation_node, seed_ras,
-            centroid, normal, orbital_radius_mm,
-            orbital_depth_mm, radius_margin_mm,
-            plane_model=plane_model,
-            stopping_value=stopping_value,
-            speed_sigma=speed_sigma,
-            posterior_boost=posterior_boost,
-            contralateral_seg_node=contralateral_seg_node,
-            contralateral_seg_id=contralateral_seg_id,
-            model_seed_node=model_seed_node,
-            model_seed_id=model_seed_id,
-            posterior_cutoff_ras=posterior_cutoff_ras,
-        )        
- 
+            seg_id, volume_ml, voxel_count, mask_segment_id = self._thresholdSegmentation(
+                volume_node, segmentation_node,
+                centroid, normal, orbital_radius_mm,
+                orbital_depth_mm, radius_margin_mm,
+                hu_min, hu_max,
+                plane_model=plane_model,
+                posterior_cutoff_ras=posterior_cutoff_ras,
+                treat_air_as_soft_tissue=treat_air_as_soft_tissue,
+            )
+
         pd.setLabelText(_("Segmentverwaltung..."))
         pd.setValue(55)
         slicer.app.processEvents()
 
-        """ =========================
-                Segment Management
-            ========================= """
-
-        if segment_color == None:
+        if segment_color is None:
             segment_color = self._getColorForActiveParameterNode("OrbitalPlane")
 
         seg = segmentation_node.GetSegmentation()
@@ -2592,8 +2542,7 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         segment_volume.SetName("IntraorbitalVolume")
         segment_volume.SetColor(*segment_color)
 
-        mask_color = np.clip(np.multiply(segment_color, 2),0,1)
-
+        mask_color = np.clip(np.multiply(segment_color, 2), 0, 1)
         segment_mask = seg.GetSegment(mask_segment_id)
         segment_mask.SetName("Mask")
         segment_mask.SetColor(mask_color)
@@ -2602,13 +2551,10 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         disp.SetOpacity3D(0.5)
         disp.SetOpacity2DFill(0.4)
         disp.SetVisibility3D(True)
+        segmentation_node.GetDisplayNode().SetSegmentVisibility(mask_segment_id, False)
 
         segmentation_node.CreateClosedSurfaceRepresentation()
         slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
-
-        """ =====================
-                Postprocessing
-            ===================== """
 
         print("\n  Postprocessing segmentation...")
 
@@ -2616,15 +2562,10 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         pd.setValue(62)
         slicer.app.processEvents()
 
-        # Prepare the segmentation editor
         segmentEditorWidget = self._prepareSegmentEditor(volume_node, segmentation_node, seg_id)
 
-        # hide the mask segment, otherwise it will also be edited by JOIN_TAUBIN Smoothing
-        segmentation_node.GetDisplayNode().SetSegmentVisibility(mask_segment_id, False)
-
-        # 1. Smoothin Joint 0.8 everywhere
         smoothing_factor = 0.8
-        print(f"  - Smoothing (Joint Taubin) with a smoothing factor of {smoothing_factor}...", end="")
+        print(f"  - Smoothing (Joint Taubin, factor={smoothing_factor})...", end="")
         segmentEditorWidget.setActiveEffectByName("Smoothing")
         effect = segmentEditorWidget.activeEffect()
         effect.setParameter("SmoothingMethod", "JOINT_TAUBIN")
@@ -2639,59 +2580,89 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         pd.setValue(74)
         slicer.app.processEvents()
 
-        # 2. Smoothing Closing 1 mm for small irregularites
-        kernel_size = 1
-        print(f"  - Smoothing (Closing) with a kernel size of {smoothing_factor} mm...", end="")
-        segmentEditorWidget.setActiveEffectByName("Smoothing")
-        effect = segmentEditorWidget.activeEffect()
-        effect.setParameter("SmoothingMethod", "MORPHOLOGICAL_CLOSING")
-        effect.setParameter("KernelSizeMm", kernel_size)
-        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedEverywhere)
-        effect.parameterSetNode().SetOverwriteMode(slicer.vtkMRMLSegmentEditorNode.OverwriteNone)
-        effect.self().onApply()
+        kernel_size = 4
+        print(f"  - 1st. Smoothing (Closing, {kernel_size} mm)...", end="")
+        self.segmentationPerformSmoothing(
+            volume_node,
+            segmentation_node,
+            seg_id,
+            "MORPHOLOGICAL_CLOSING",
+            kernel_size,
+            segmentEditorWidget
+        )
         time.sleep(1)
         print(" Done")
 
         pd.setLabelText(_("Nachbearbeitung: HU-Schwellenwert..."))
-        pd.setValue(84)
+        pd.setValue(80)
         slicer.app.processEvents()
 
-        # 3. Threshold -1000 bis hu-max insidehsegment to remove voxels that intersect
-        # with bone after the smoothing effects
-        print(f"  - Thresholding to remove intersection with bone (HU-Threshold {hu_max})...",  end="")
-        segmentEditorWidget.setActiveEffectByName("Threshold")
-        effect = segmentEditorWidget.activeEffect()
-        effect.setParameter("MinimumThreshold",-1000)
-        effect.setParameter("MaximumThreshold", hu_max)
-        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedInsideVisibleSegments)
-        effect.self().onApply()
+        # Re-apply HU threshold inside the segment to remove bone introduced by smoothing
+        # does not affect the soft tissue
+        print(f"  - 1st. Re-threshold [-1024, {hu_max}] HU after smoothing...", end="")
+        self.segmentationPerformThreshold(
+            volume_node,
+            segmentation_node,
+            seg_id,
+            -1024,
+            hu_max,
+            True,
+            segmentEditorWidget
+        )
         time.sleep(1)
         print(" Done")
 
-        pd.setLabelText(_("Nachbearbeitung: Abschluss..."))
+        pd.setLabelText(_("Nachbearbeitung: Closing..."))
+        pd.setValue(86)
+        kernel_size = 2
+        print(f"  - 2nd. Smoothing (Closing, {kernel_size} mm)...", end="")
+        self.segmentationPerformSmoothing(
+            volume_node,
+            segmentation_node,
+            seg_id,
+            "MORPHOLOGICAL_CLOSING",
+            kernel_size,
+            segmentEditorWidget
+        )
+        time.sleep(1)
+        print(" Done")
+
+         # Re-apply HU threshold inside the segment to remove bone introduced by smoothing
+        # does not affect the soft tissue
+        pd.setLabelText(_("Nachbearbeitung: HU-Schwellenwert..."))
         pd.setValue(92)
-        slicer.app.processEvents()
+        print(f"  - 2nd. Re-threshold [-1024, {hu_max+200}] HU after smoothing...", end="")
+        self.segmentationPerformThreshold(
+            volume_node,
+            segmentation_node,
+            seg_id,
+            -1024,
+            hu_max+100,
+            True,
+            segmentEditorWidget
+        )
+        time.sleep(1)
+        print(" Done")
 
         pd.setValue(100)
         pd.close()
         slicer.app.processEvents()
 
         msgBox = qt.QMessageBox(qt.QMessageBox.Information,
-                                "Segmentation complete",
-                                "Segmentation almost complete.<br /> " \
-                                "Check the Segmentation result by verifying "
-                                "that all the intraorbital space is filled. " \
-                                "If that is not the case adjust the segmentation" \
-                                "parameters (HU min/max, Speed, Stopping-Value)." \
-                                "Afterwards click on \"Remove Extrusions\"." \
-                                "If afterwands the Segmentation contains multiple "  
-                                "Islands click on \"Pick Island\" to select the" \
-                                "Island within a slice View.")
-        msgBoxButtonInspect = msgBox.addButton("OK", qt.QMessageBox.AcceptRole)
+                                _("Segmentation complete"),
+                                _("Segmentation almost complete.<br /><br />"
+                                  "Verify that the intraorbital space is fully filled. "
+                                  "If not, adjust the parameters (HU min/max, Stopping Value) "
+                                  "and re-run the segmentation.<br /><br />"
+                                  "Once satisfied, click <b>Remove Extrusions</b> to remove "
+                                  "protrusions and disconnected islands automatically.<br /><br />"
+                                  "If isolated islands remain afterwards, click "
+                                  "<b>Remove Islands</b> to keep only the correct one."))
+        msgBox.addButton("OK", qt.QMessageBox.AcceptRole)
         msgBox.exec()
 
         print(f"\n{'─'*60}")
-        print(f"  FM raw voxels          : {voxel_count:,}  ({volume_ml:.2f} ml before post-processing)")
+        print(f"  Threshold voxels       : {voxel_count:,}  ({volume_ml:.2f} ml before post-processing)")
         print(f"  Segment node           : {seg_node_name}")
         print(f"{'='*60}\n")
 
@@ -2702,11 +2673,8 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             "segment_id":          seg_id,
             "volume_ml":           volume_ml,
             "voxel_count":         voxel_count,
-            "seed_ras":            seed_ras,
-            "seed_node":           seed_node,
-            "offset_mm":           offset_used,
-            "hu_at_seed":          hu,
-            "voxel_exclusion_map": mask_segment_id
+            "seed_node":           None,
+            "voxel_exclusion_map": mask_segment_id,
         }
 
     def _prepareSegmentEditor(self, volume_node, segmentation_node, segment_id):
@@ -2759,6 +2727,51 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # remove small irregularities after performing the cutoff
         self.segmentationRemoveExtrusions(volume_node, segmentation_node, segment_id, 2)
 
+        segmentEditorWidget.setActiveEffectByName("Null")
+
+    def segmentationPerformThreshold(self,
+                                     volume_node,
+                                     segmentation_node,
+                                     segment_id,
+                                     hu_min,
+                                     hu_max,
+                                     only_edit_inside = False,
+                                     segmentEditorWidget = None):
+        if segmentEditorWidget is None:
+            segmentEditorWidget = self._prepareSegmentEditor(volume_node, segmentation_node, segment_id)
+        
+        segmentEditorWidget.setActiveEffectByName("Threshold")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("MinimumThreshold", -1024)
+        effect.setParameter("MaximumThreshold", hu_max)
+
+        print(f"hu_max: {hu_max}")
+
+        if only_edit_inside:
+           effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedInsideSingleSegment)
+           effect.parameterSetNode().SetMaskSegmentID(segment_id)
+
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedInsideVisibleSegments)
+        effect.self().onApply()
+        segmentEditorWidget.setActiveEffectByName("Null")
+
+    def segmentationPerformSmoothing(self,
+                                     volume_node,
+                                     segmentation_node,
+                                     segment_id,
+                                     method,
+                                     kernel_size,
+                                     segmentEditorWidget = None):
+        if segmentEditorWidget is None:
+            segmentEditorWidget = self._prepareSegmentEditor(volume_node, segmentation_node, segment_id)
+        
+        segmentEditorWidget.setActiveEffectByName("Smoothing")
+        effect = segmentEditorWidget.activeEffect()
+        effect.setParameter("SmoothingMethod", method)
+        effect.setParameter("KernelSizeMm", kernel_size)
+        effect.parameterSetNode().SetMaskMode(slicer.vtkMRMLSegmentationNode.EditAllowedEverywhere)
+        effect.parameterSetNode().SetOverwriteMode(slicer.vtkMRMLSegmentEditorNode.OverwriteNone)
+        effect.self().onApply()
         segmentEditorWidget.setActiveEffectByName("Null")
 
     # ------------------------------------------------------------------
@@ -2975,62 +2988,89 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         node.GetDisplayNode().SetGlyphScale(3.0)
         return node
     
-    def _keepIslandAtSeed(self, segmentation_node, segment_id, seed_ras):
-        """ Copies the Behaviour of the Islands-Segment-Effect, but uses the seed RAS vor selecting the island
-
-        :param segmentation_node: _description_
-        :param segment_id: _description_
-        :param seed_ras: _description_
+    def _keepIslandAtPoint(self, segmentation_node, seg_id, anchor_ras):
+        """Keep only the connected component of ``seg_id`` that contains
+        ``anchor_ras`` (RAS).  Falls back to the largest component when the
+        anchor is outside every island.  Short-circuits when ≤1 island exists.
+        Modifies the binary labelmap in-place — segment ID does not change.
         """
+        import SimpleITK as sitk
+        import vtk.util.numpy_support as nps
 
-        segment = segmentation_node.GetSegment(segment_id)        
-        # selectedSegmentLabelmap = segment.GetRepresentation("Binary labelmap")
-        # We need to know exactly the value of the segment voxels, apply threshold to make force the selected label value
-        labelValue = 1
-        backgroundValue = 0
+        seg = segmentation_node.GetSegmentation()
+        segment = seg.GetSegment(seg_id)
+        if segment is None:
+            return
 
-        labelmapVolumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode")
-        slicer.modules.segmentations.logic().ExportSegmentsToLabelmapNode(segmentation_node, segment_id, labelmapVolumeNode)
+        BL_NAME = "Binary labelmap"
+        seg.CreateRepresentation(BL_NAME)
+        binary_lm = segment.GetRepresentation(BL_NAME)
+        if binary_lm is None:
+            return
+        scalars = binary_lm.GetPointData().GetScalars()
+        if scalars is None:
+            return
 
-        segmentImageData = labelmapVolumeNode.GetImageData()
+        try:
+            label_value = segment.GetLabelValue()
+        except AttributeError:
+            label_value = 1
 
-        thresh = vtk.vtkImageThreshold()
-        thresh.SetInputData(segmentImageData)
-        thresh.ThresholdByLower(0)
-        thresh.SetInValue(backgroundValue)
-        thresh.SetOutValue(labelValue)
-        thresh.SetOutputScalarType(segmentImageData.GetScalarType())
-        thresh.Update()
+        dims = binary_lm.GetDimensions()          # (Nx, Ny, Nz)
+        arr  = nps.vtk_to_numpy(scalars).reshape(dims[2], dims[1], dims[0])
 
-        # Create oriented image data from output
-        import vtkSegmentationCorePython as vtkSegmentationCore # pyright: ignore[reportMissingImports]
+        mask = (arr == label_value).astype(np.uint8)
+        if mask.max() == 0:
+            return
 
-        inputLabelImage = slicer.vtkOrientedImageData()
-        inputLabelImage.ShallowCopy(thresh.GetOutput())
-        selectedSegmentLabelmapImageToWorldMatrix = vtk.vtkMatrix4x4()
-        segmentImageData.GetImageToWorldMatrix(selectedSegmentLabelmapImageToWorldMatrix)
-        inputLabelImage.SetImageToWorldMatrix(selectedSegmentLabelmapImageToWorldMatrix)
+        cc_arr = sitk.GetArrayFromImage(
+            sitk.ConnectedComponent(sitk.GetImageFromArray(mask))
+        )
+        n_islands = int(cc_arr.max())
+        if n_islands <= 1:
+            return  # nothing to select
 
-        # Process segmentation
-        floodFillingFilter = vtk.vtkImageThresholdConnectivity()
-        floodFillingFilter.SetInputData(inputLabelImage)
-        seedPoints = vtk.vtkPoints()
-        origin = inputLabelImage.GetOrigin()
-        spacing = inputLabelImage.GetSpacing()
-        seedPoints.InsertNextPoint(origin[0] + seed_ras[0], origin[1] + seed_ras[1] * spacing[1], origin[2] + seed_ras[2])
-        floodFillingFilter.SetSeedPoints(seedPoints)
-        floodFillingFilter.ThresholdBetween(1, 1)
-        floodFillingFilter.SetInValue(1)
-        floodFillingFilter.SetOutValue(0)
-        floodFillingFilter.Update()
+        # GetImageToWorldMatrix maps VTK voxel index space → RAS world.
+        # VTK indices start at the extent minimum, not at 0.
+        # Invert to get RAS → VTK index, then subtract extent start to get numpy index.
+        anchor_world = (float(anchor_ras[0]), float(anchor_ras[1]),
+                        float(anchor_ras[2]), 1.0)
 
-        # Import segment from vtkImageData
-        segmentImageData.DeepCopy(floodFillingFilter.GetOutput())
-        slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(labelmapVolumeNode, segmentation_node, segment_id)
+        i2w = vtk.vtkMatrix4x4()
+        binary_lm.GetImageToWorldMatrix(i2w)
+        w2i = vtk.vtkMatrix4x4()
+        vtk.vtkMatrix4x4.Invert(i2w, w2i)
+        idx = w2i.MultiplyPoint(anchor_world)
 
-        # Cleanup temporary nodes
-        slicer.mrmlScene.RemoveNode(labelmapVolumeNode.GetDisplayNode().GetColorNode())
-        slicer.mrmlScene.RemoveNode(labelmapVolumeNode)
+        ext = binary_lm.GetExtent()  # (ixMin, ixMax, iyMin, iyMax, izMin, izMax)
+        ix = int(round(idx[0])) - ext[0]
+        iy = int(round(idx[1])) - ext[2]
+        iz = int(round(idx[2])) - ext[4]
+
+        print(f"  Island anchor (RAS): {np.round(anchor_ras[:3], 1)}")
+        print(f"  VTK index raw: ({idx[0]:.1f}, {idx[1]:.1f}, {idx[2]:.1f})  extent: {ext}")
+        print(f"  Numpy index: ({ix}, {iy}, {iz})  array shape (z,y,x): {cc_arr.shape}")
+
+        Nz, Ny, Nx = cc_arr.shape
+        label_at_anchor = 0
+        if 0 <= ix < Nx and 0 <= iy < Ny and 0 <= iz < Nz:
+            label_at_anchor = int(cc_arr[iz, iy, ix])
+
+        if label_at_anchor == 0:
+            uniq, counts = np.unique(cc_arr[cc_arr > 0], return_counts=True)
+            label_at_anchor = int(uniq[np.argmax(counts)])
+            print(f"  Island auto-select: anchor outside all islands "
+                  f"— keeping largest of {n_islands}")
+        else:
+            print(f"  Island auto-select: island {label_at_anchor} of {n_islands}")
+
+        result = np.where(cc_arr == label_at_anchor, label_value, 0).astype(arr.dtype)
+        new_sc = nps.numpy_to_vtk(result.flatten(order='C'), deep=True)
+        new_sc.SetName(scalars.GetName())
+        binary_lm.GetPointData().SetScalars(new_sc)
+        binary_lm.Modified()
+        segmentation_node.Modified()
+        segmentation_node.CreateClosedSurfaceRepresentation()
 
 
     def _fastMarchingSegmentation(
@@ -3047,48 +3087,27 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         model_seed_node=None,
         model_seed_id=None,
         posterior_cutoff_ras=None,
+        treat_air_as_soft_tissue: bool = True,
     ):
-        """Segments the intraorbital volume via Fast Marching on a HU-derived speed image.
-
-        Speed is a Gaussian of HU centred at 0 (soft tissue near HU=0 is fast; bone and air are both near zero and act as barriers).
-        A spherical prefilter limits the working region for performance; within
-        that region the orbital rim mesh defines the anterior boundary and
-        orbital_depth_mm the posterior limit.  A posterior_boost factor
-        gradually increases speed towards the back of the orbit to prevent
-        premature stopping in low-contrast fat.  The result is imported as a
-        new segment into segmentation_node.
-        """
+        """Segments the intraorbital volume via Fast Marching on a HU-derived speed image."""
         import SimpleITK as sitk
         import sitkUtils
         from scipy.interpolate import griddata
 
-        # --- 1. CT-Volumen laden und auf die orbitale Region zuschneiden ---
-        # Der Zuschnitt reduziert die Arraygröße massiv – bei hochauflösenden CBCTs
-        # würden die Koordinaten-Arrays für das volle Volumen >10 GB belegen.
-        # Das Crop-Image hat die korrekte Origin/Spacing/Direction, sodass alle
-        # physikalischen Koordinaten unverändert stimmen.
         c_lps = np.array([-centroid[0], -centroid[1],  centroid[2]])
         n_lps = np.array([-normal[0],   -normal[1],    normal[2]])
         max_extent = orbital_radius_mm + radius_margin_mm + orbital_depth_mm
 
         sitk_image_full = sitkUtils.PullVolumeFromSlicer(volume_node)
         sitk_image = self._cropSitkToOrbitalRegion(sitk_image_full, c_lps, max_extent + 10.0)
-        del sitk_image_full  # Speicher sofort freigeben
+        del sitk_image_full
 
         hu_arr = sitk.GetArrayFromImage(sitk.Cast(sitk_image, sitk.sitkFloat32))
-        print(f"  Crop-Größe: {sitk_image.GetSize()} Voxel "
-              f"(Spacing {np.round(sitk_image.GetSpacing(),2)})")
+        print(f"  Crop size: {sitk_image.GetSize()} voxels "
+              f"(spacing {np.round(sitk_image.GetSpacing(), 2)})")
 
-        # --- 2. Speed-Image aus HU ableiten ---
-        # Gaußkurve mit Maximum bei HU=0: Weichgewebe ≈ 1, Knochen/Luft ≈ 0.
-        # speed_sigma bestimmt die Breite – größere Werte tolerieren mehr HU-Abweichung.
         speed_arr = np.exp(-(hu_arr / speed_sigma) ** 2).astype(np.float32)
 
-        # --- 3. Koordinatensystem: RAS → LPS (bereits oben berechnet) ---
-
-        # --- 4. Physikalische LPS-Koordinaten für jeden Voxel berechnen ---
-        # Aus Gitterindizes (i,j,k) wird über Origin, Spacing und Direction-Matrix
-        # die tatsächliche 3D-Position im Patientenraum errechnet.
         origin    = np.array(sitk_image.GetOrigin())
         spacing   = np.array(sitk_image.GetSpacing())
         direction = np.array(sitk_image.GetDirection()).reshape(3, 3)
@@ -3098,28 +3117,18 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         idx_flat = np.stack([IX.flatten(), IY.flatten(), IZ.flatten()], axis=1).astype(np.float64)
         lps_pts = origin + (direction @ (idx_flat * spacing).T).T
 
-        # --- 5. Orbita-Koordinaten: Tiefe und lateraler Abstand ---
-        # rel: Versatz jedes Voxels vom Orbitazentrum (Centroid des Rimmodells).
-        # depth: Projektion auf die Orbitaachse (normal) – positiv = posterior.
-        # lateral: senkrechter Abstand von der Achse (für den Fallback ohne Mesh).
         rel     = lps_pts - c_lps
         depth   = rel @ n_lps
         lateral = np.linalg.norm(rel - np.outer(depth, n_lps), axis=1)
 
         if plane_model is not None:
-            # --- 6. Lokales 2D-Koordinatensystem in der Orbitaebene aufbauen ---
-            # u_vec zeigt "nach oben" (world-up projiziert auf die Orbitaebene),
-            # v_vec steht senkrecht dazu; zusammen spannen sie die Eingangsebene auf.
             world_up = np.array([0.0, 0.0, 1.0])
             u_vec = world_up - np.dot(world_up, n_lps) * n_lps
-            if np.linalg.norm(u_vec) < 1e-6:  # Fallback wenn Achse ≈ world_up
+            if np.linalg.norm(u_vec) < 1e-6:
                 u_vec = np.array([1.0, 0.0, 0.0]) - np.dot(np.array([1.0, 0.0, 0.0]), n_lps) * n_lps
             u_vec /= np.linalg.norm(u_vec)
             v_vec = np.cross(n_lps, u_vec)
 
-            # --- 7. Mesh-Punkte in das lokale Koordinatensystem projizieren ---
-            # mesh_d: Tiefe jedes Rimmodell-Punktes entlang der Orbitaachse.
-            # mesh_u/v: 2D-Position im Orbitaebenenkoordinatensystem.
             poly = plane_model.GetPolyData()
             mesh_ras = np.array([poly.GetPoint(i) for i in range(poly.GetNumberOfPoints())])
             mesh_lps = mesh_ras * np.array([-1.0, -1.0, 1.0])
@@ -3128,22 +3137,13 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             mesh_u   = mesh_rel @ u_vec
             mesh_v   = mesh_rel @ v_vec
 
-            # --- 8. Sphärischer Vorab-Filter ---
-            # Begrenzt die teure Mesh-Interpolation auf Voxel in der Nähe der Orbita.
-            # Ein zylindrischer Filter entlang der Orbitaachse würde bei geneigter Ebene
-            # superior gelegene Voxel fälschlicherweise ausschließen (horizontaler Z-Schnitt).
-            # Der sphärische Abstand vom Centroid ist achsunabhängig und vermeidet das.
             centroid_dist = np.linalg.norm(rel, axis=1)
             in_region = (
                 (centroid_dist <= max_extent) &
-                (depth >= -5.0) &                    # 5 mm Puffer vor der Eingangsebene
-                (depth <= orbital_depth_mm + 5.0)    # 5 mm Puffer hinter der Tiefengrenze
+                (depth >= -5.0) &
+                (depth <= orbital_depth_mm + 5.0)
             )
 
-            # --- 9. Für jeden Voxel in der Region: Tiefe des Rimmodells interpolieren ---
-            # griddata bestimmt an der lateralen (u,v)-Position jedes Voxels die
-            # zugehörige Tiefe der Orbitaöffnungsfläche (mesh_d).
-            # Nearest-Fallback für Voxel außerhalb der konvexen Hülle der Meshpunkte.
             rel_in       = rel[in_region]
             depth_in_reg = depth[in_region]
             vu = rel_in @ u_vec
@@ -3164,23 +3164,14 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
                     method='nearest',
                 )
 
-            # --- 10. Masken berechnen ---
-            # speed_barrier: nur lateraler Zylinder – blockiert Sinus/Siebbeintaschen während FM.
-            # Eingangsebene und Tiefengrenze werden NICHT als Speed-Barriere verwendet,
-            # damit Smoothing nicht zu Schrumpfung führt; sie werden nach Smoothing per
-            # Cutoff-Button angewendet.
             speed_barrier = (lateral > orbital_radius_mm + radius_margin_mm).reshape(Nz, Ny, Nx)
-
-            # cutoff_mask: Eingangsebene + Tiefengrenze – als Mask-Segment exportiert,
-            # wird nach Smoothing via "Perform Cutoff" / "Finish" vom Segment subtrahiert.
             cutoff_mask = ~in_region
             cutoff_mask[in_region] = (
-                (depth_in_reg < mesh_depth_at_voxel) |  # anterior zur Eingangsebene
-                (depth_in_reg > orbital_depth_mm)        # posterior zur Tiefengrenze
+                (depth_in_reg < mesh_depth_at_voxel) |
+                (depth_in_reg > orbital_depth_mm)
             )
             cutoff_mask = cutoff_mask.reshape(Nz, Ny, Nx)
         else:
-            # Fallback ohne Rimmodell
             speed_barrier = (lateral > orbital_radius_mm + radius_margin_mm).reshape(Nz, Ny, Nx)
             cutoff_mask = (
                 (depth <= 0) |
@@ -3188,52 +3179,31 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
                 (lateral > orbital_radius_mm + radius_margin_mm)
             ).reshape(Nz, Ny, Nx)
 
-        # Posterioren Cutoff-Punkt in die Cutoff-Maske aufnehmen (Koronalebene).
-        # Wird erst nach Smoothing angewendet – kein Schrumpfungs-Artefakt.
         if posterior_cutoff_ras is not None:
             cutoff_lps_pt = np.array([
                 -posterior_cutoff_ras[0],
                 -posterior_cutoff_ras[1],
                  posterior_cutoff_ras[2],
             ])
-            depth_from_cutoff = (lps_pts - cutoff_lps_pt) @ np.array([0.0, 1.0, 0.0])
+            depth_from_cutoff = (lps_pts - cutoff_lps_pt) @ n_lps
             cutoff_mask = cutoff_mask | (depth_from_cutoff.reshape(Nz, Ny, Nx) > 0)
 
-        # --- 11. Intraorbitale Luft wie Weichgewebe behandeln ---
-        # Innerhalb des lateralen Zylinders: Luft-Voxel (HU < -400) als Weichgewebe remappen,
-        # damit retrobulbäre Luft den FM nicht blockiert.
-        orbital_air = (~speed_barrier) & (hu_arr < -400)
-        speed_arr[orbital_air] = 1.0
+        if treat_air_as_soft_tissue:
+            orbital_air = (~speed_barrier) & (hu_arr < -400)
+            speed_arr[orbital_air] = 1.0
 
-        # --- 12. Posterior-Boost anwenden ---
-        # Orbitales Fett weiter posterior hat oft niedrigen Kontrast → Front stoppt zu früh.
-        # Der Faktor steigt linear von 1.0 (anterior) auf 1+posterior_boost (posterior),
-        # sodass die Front im hinteren Orbitabereich schneller läuft.
         depth_norm = np.clip(depth / orbital_depth_mm, 0.0, 1.0)
         posterior_factor = (1.0 + posterior_boost * depth_norm).reshape(Nz, Ny, Nx)
         speed_arr = np.clip(speed_arr * posterior_factor, 1e-4, None)
-
-        # --- 13. Laterale Barriere im Speed-Image setzen ---
-        # Blockiert Ausbreitung in Kieferhöhle und Siebbeintaschen.
-        # Eingangsebene und Tiefengrenze bleiben offen – werden nach Smoothing beschnitten.
         speed_arr[speed_barrier] = 1e-4
 
-        # --- 14. Speed-Image zurück nach SimpleITK konvertieren ---
-        # CopyInformation überträgt Origin, Spacing und Direction, damit der
-        # FM-Filter die korrekte Geometrie kennt.
         speed_sitk = sitk.GetImageFromArray(speed_arr)
         speed_sitk.CopyInformation(sitk_image)
 
-        # --- 15. Trial-Punkte zusammenstellen ---
-        # Primärer Seed: einzelner Punkt auf der Orbitaachse.
         s_lps = [-float(seed_ras[0]), -float(seed_ras[1]), float(seed_ras[2])]
         seed_idx = speed_sitk.TransformPhysicalPointToIndex(s_lps)
-        print(f"  FM-Seed-Index (LPS): {seed_idx}")
+        print(f"  FM seed index (LPS): {seed_idx}")
 
-        # Bestimme den FM-Startbereich je nach Seed-Modus:
-        # - Gegenseite: spiegeln + 10 % schrumpfen (Knochen-/Siebbeinchutz)
-        # - Modell:     positioniertes Template direkt exportieren (lila Anzeige)
-        # - Manuell:    einzelner Punkt auf der Orbitaachse (Fallback für alle Modi)
         name_prefix = segmentation_node.GetName().replace("_IntraorbitalSeg", "") + "_"
         if contralateral_seg_node is not None and contralateral_seg_id is not None:
             region_points = self._prepareContralateralSeed(
@@ -3246,51 +3216,187 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         else:
             region_points = []
 
-        # Trial-Punkte posterior zur Cutoff-Ebene entfernen.
-        # FM-Trial-Points haben Arrival-Time=0 unabhängig vom Speed-Wert.
-        # Ebenennormale = (0,1,0) in LPS = Posterior-Richtung (Koronalebene).
-        # Da CTs korrekt ausgerichtet sind, entspricht das der anatomischen AP-Achse.
         if posterior_cutoff_ras is not None and region_points:
             cutoff_lps_pre = np.array([
                 -posterior_cutoff_ras[0],
                 -posterior_cutoff_ras[1],
                  posterior_cutoff_ras[2],
             ])
-            posterior_dir = np.array([0.0, 1.0, 0.0])  # +Y in LPS = Posterior
-            pts_ijk = np.array(region_points, dtype=np.float64)  # (N, 3): i,j,k
+            pts_ijk = np.array(region_points, dtype=np.float64)
             pts_lps = origin + (direction @ (pts_ijk * spacing).T).T
-            keep = (pts_lps - cutoff_lps_pre) @ posterior_dir <= 0
+            keep = (pts_lps - cutoff_lps_pre) @ n_lps <= 0
             n_before = len(region_points)
             region_points = [p for p, k in zip(region_points, keep) if k]
-            print(f"  Cutoff-Filter Trial-Punkte: {len(region_points)}/{n_before} behalten")
+            print(f"  Cutoff filter trial points: {len(region_points)}/{n_before} kept")
 
         trial_points = region_points if region_points else [seed_idx]
         if seed_idx not in trial_points:
             trial_points = [seed_idx] + trial_points
 
-        # --- 15. Fast Marching ausführen ---
-        # Der Filter berechnet die Arrival-Time für jeden Voxel ausgehend vom Seed.
-        # Er stoppt wenn die minimale verbleibende Arrival-Time stopping_value überschreitet.
         fm = sitk.FastMarchingImageFilter()
         fm.SetStoppingValue(stopping_value)
         fm.SetTrialPoints(trial_points)
         arrival = fm.Execute(speed_sitk)
 
-        # --- 16. Arrival-Time → binäre Maske ---
-        # Alle Voxel mit Arrival-Time < stopping_value gehören zum Segment.
         arrival_arr = sitk.GetArrayFromImage(arrival)
         binary_arr  = (arrival_arr < stopping_value).astype(np.uint8)
 
         voxel_count = int(binary_arr.sum())
-
         sp = sitk_image.GetSpacing()
         volume_ml = voxel_count * sp[0] * sp[1] * sp[2] / 1000.0
         print(f"  Fast Marching: {voxel_count:,} voxels, {volume_ml:.2f} ml")
 
-        # --- 17. Ergebnis als Segment in Slicer importieren ---
-        # Weg: NumPy → SimpleITK → LabelMapVolumeNode → SegmentationNode.
-        # Der temporäre LabelMap-Node wird nach dem Import wieder entfernt.
-        seg_id = self._convertArrayToSegment(binary_arr, sitk_image, segmentation_node)
+        seg_id          = self._convertArrayToSegment(binary_arr, sitk_image, segmentation_node)
+        mask_segment_id = self._convertArrayToSegment(cutoff_mask.astype(np.uint8), sitk_image, segmentation_node)
+
+        return seg_id, volume_ml, voxel_count, mask_segment_id
+
+    def _thresholdSegmentation(
+        self,
+        volume_node, segmentation_node,
+        centroid, normal, orbital_radius_mm,
+        orbital_depth_mm, radius_margin_mm,
+        hu_min: float, hu_max: float,
+        plane_model=None,
+        posterior_cutoff_ras=None,
+        treat_air_as_soft_tissue: bool = True,
+    ):
+        """Segments the intraorbital volume by HU threshold within a geometric mask.
+
+        The mask consists of a lateral cylinder (radius = orbital_radius_mm +
+        radius_margin_mm), the anterior boundary defined by the entry-plane mesh,
+        the posterior depth limit (orbital_depth_mm), and an optional posterior
+        cutoff point.  Every voxel inside the mask whose HU is in [hu_min, hu_max]
+        is included in the segment.
+        """
+        import SimpleITK as sitk
+        import sitkUtils
+        from scipy.interpolate import griddata
+
+        # --- 1. Crop CT to orbital bounding box ---
+        c_lps = np.array([-centroid[0], -centroid[1],  centroid[2]])
+        n_lps = np.array([-normal[0],   -normal[1],    normal[2]])
+        max_extent = orbital_radius_mm + radius_margin_mm + orbital_depth_mm
+
+        # If a posterior cutoff point is given, extend the crop so it reaches
+        # 10 mm beyond that point (its 3D distance from the centroid is the
+        # relevant metric because _cropSitkToOrbitalRegion uses a cubic box).
+        crop_radius = max_extent + 0.0
+        if posterior_cutoff_ras is not None:
+            cutoff_lps = np.array([
+                -posterior_cutoff_ras[0],
+                -posterior_cutoff_ras[1],
+                 posterior_cutoff_ras[2],
+            ])
+            cutoff_dist = float(np.linalg.norm(cutoff_lps - c_lps))
+            crop_radius = max(crop_radius, cutoff_dist + 0.0)
+
+        sitk_image_full = sitkUtils.PullVolumeFromSlicer(volume_node)
+        sitk_image = self._cropSitkToOrbitalRegion(sitk_image_full, c_lps, crop_radius)
+        del sitk_image_full
+
+        hu_arr = sitk.GetArrayFromImage(sitk.Cast(sitk_image, sitk.sitkFloat32))
+        print(f"  Crop size: {sitk_image.GetSize()} voxels "
+              f"(spacing {np.round(sitk_image.GetSpacing(), 2)})")
+
+        # --- 2. Physical LPS coordinates for every voxel ---
+        origin    = np.array(sitk_image.GetOrigin())
+        spacing   = np.array(sitk_image.GetSpacing())
+        direction = np.array(sitk_image.GetDirection()).reshape(3, 3)
+
+        Nz, Ny, Nx = hu_arr.shape
+        IZ, IY, IX = np.meshgrid(np.arange(Nz), np.arange(Ny), np.arange(Nx), indexing='ij')
+        idx_flat = np.stack([IX.flatten(), IY.flatten(), IZ.flatten()], axis=1).astype(np.float64)
+        lps_pts = origin + (direction @ (idx_flat * spacing).T).T
+
+        # --- 3. Orbital coordinates: axial depth and lateral distance ---
+        rel     = lps_pts - c_lps
+        depth   = rel @ n_lps
+        lateral = np.linalg.norm(rel - np.outer(depth, n_lps), axis=1)
+
+        # --- 4. Lateral cylinder — applied during thresholding ---
+        outside_cylinder = (lateral > orbital_radius_mm + radius_margin_mm).reshape(Nz, Ny, Nx)
+
+        # --- 5. Cutoff mask (entry plane + depth limit + posterior cutoff point) ---
+        # Computed here but NOT applied to the threshold — exported as a "Mask"
+        # segment and subtracted via "Perform Cutoff" / "Finish Segmentation".
+        if plane_model is not None:
+            world_up = np.array([0.0, 0.0, 1.0])
+            u_vec = world_up - np.dot(world_up, n_lps) * n_lps
+            if np.linalg.norm(u_vec) < 1e-6:
+                u_vec = np.array([1.0, 0.0, 0.0]) - np.dot(np.array([1.0, 0.0, 0.0]), n_lps) * n_lps
+            u_vec /= np.linalg.norm(u_vec)
+            v_vec = np.cross(n_lps, u_vec)
+
+            poly = plane_model.GetPolyData()
+            mesh_ras = np.array([poly.GetPoint(i) for i in range(poly.GetNumberOfPoints())])
+            mesh_lps = mesh_ras * np.array([-1.0, -1.0, 1.0])
+            mesh_rel = mesh_lps - c_lps
+            mesh_d   = mesh_rel @ n_lps
+            mesh_u   = mesh_rel @ u_vec
+            mesh_v   = mesh_rel @ v_vec
+
+            centroid_dist = np.linalg.norm(rel, axis=1)
+            in_region = (
+                (centroid_dist <= max_extent) &
+                (depth >= -5.0) &
+                (depth <= orbital_depth_mm + 5.0)
+            )
+
+            rel_in       = rel[in_region]
+            depth_in_reg = depth[in_region]
+            vu = rel_in @ u_vec
+            vv = rel_in @ v_vec
+
+            mesh_depth_at_voxel = griddata(
+                np.column_stack([mesh_u, mesh_v]),
+                mesh_d,
+                np.column_stack([vu, vv]),
+                method='linear', fill_value=np.nan,
+            )
+            nan_mask = np.isnan(mesh_depth_at_voxel)
+            if nan_mask.any():
+                mesh_depth_at_voxel[nan_mask] = griddata(
+                    np.column_stack([mesh_u, mesh_v]),
+                    mesh_d,
+                    np.column_stack([vu[nan_mask], vv[nan_mask]]),
+                    method='nearest',
+                )
+
+            cutoff_mask = ~in_region
+            cutoff_mask[in_region] = (
+                (depth_in_reg < mesh_depth_at_voxel) |  # anterior to entry plane
+                (depth_in_reg > orbital_depth_mm)        # beyond depth limit
+            )
+            cutoff_mask = cutoff_mask.reshape(Nz, Ny, Nx)
+        else:
+            cutoff_mask = (
+                (depth <= 0) | (depth > orbital_depth_mm)
+            ).reshape(Nz, Ny, Nx)
+
+        # Posterior cutoff point: plane perpendicular to orbital axis through markup
+        if posterior_cutoff_ras is not None:
+            cutoff_lps_pt = np.array([
+                -posterior_cutoff_ras[0],
+                -posterior_cutoff_ras[1],
+                 posterior_cutoff_ras[2],
+            ])
+            depth_from_cutoff = (lps_pts - cutoff_lps_pt) @ n_lps
+            cutoff_mask = cutoff_mask | (depth_from_cutoff.reshape(Nz, Ny, Nx) > 0)
+
+        # --- 6. Apply HU threshold within the lateral cylinder only ---
+        hu_in_range = (hu_arr >= hu_min) & (hu_arr <= hu_max)
+        if treat_air_as_soft_tissue:
+            hu_in_range = hu_in_range | (hu_arr < -400)
+        binary_arr = ((~outside_cylinder) & hu_in_range).astype(np.uint8)
+
+        voxel_count = int(binary_arr.sum())
+        sp = sitk_image.GetSpacing()
+        volume_ml = voxel_count * sp[0] * sp[1] * sp[2] / 1000.0
+        print(f"  Threshold [{hu_min}, {hu_max}] HU: {voxel_count:,} voxels, {volume_ml:.2f} ml")
+
+        # --- 7. Import results as segments ---
+        seg_id         = self._convertArrayToSegment(binary_arr, sitk_image, segmentation_node)
         mask_segment_id = self._convertArrayToSegment(cutoff_mask.astype(np.uint8), sitk_image, segmentation_node)
 
         return seg_id, volume_ml, voxel_count, mask_segment_id

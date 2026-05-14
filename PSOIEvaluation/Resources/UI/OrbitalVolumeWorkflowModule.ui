@@ -256,7 +256,7 @@
           <double>0.050000000000000</double>
          </property>
          <property name="decimals">
-          <int>2</int>
+          <number>2</number>
          </property>
          <property name="value">
           <double>0.400000000000000</double>
@@ -678,20 +678,33 @@
           </widget>
          </item>
          <item row="4" column="0" colspan="2">
+          <widget class="QCheckBox" name="treatAirAsSoftTissueCheckBox">
+           <property name="toolTip">
+            <string>Intraorbital air impacts the segmentation algorithm. Treating air like soft tissue improves intraorbital segmentation, but possibly leads to inclusion of the maxillary sinus.</string>
+           </property>
+           <property name="text">
+            <string>Treat air like soft tissue</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0" colspan="2">
           <widget class="QLabel" name="labelSeedHeader">
            <property name="text">
             <string>&lt;b&gt;Seed Point:&lt;/b&gt;</string>
            </property>
           </widget>
          </item>
-         <item row="5" column="0">
+         <item row="6" column="0">
           <widget class="QLabel" name="labelAutoSeed">
            <property name="text">
             <string>Automatic Seed:</string>
            </property>
           </widget>
          </item>
-         <item row="5" column="1">
+         <item row="6" column="1">
           <widget class="QCheckBox" name="autoSeedCheckBox">
            <property name="toolTip">
             <string>Automatically search for seed point within the HU window (recommended)</string>
@@ -701,14 +714,14 @@
            </property>
           </widget>
          </item>
-         <item row="6" column="0">
+         <item row="7" column="0">
           <widget class="QLabel" name="labelSeedOffset">
            <property name="text">
             <string>Seed Offset (mm):</string>
            </property>
           </widget>
          </item>
-         <item row="6" column="1">
+         <item row="7" column="1">
           <widget class="QDoubleSpinBox" name="seedOffsetSpinBox">
            <property name="enabled">
             <bool>false</bool>
@@ -730,79 +743,22 @@
            </property>
           </widget>
          </item>
-         <item row="7" column="0" colspan="2">
+         <item row="8" column="0" colspan="2">
           <widget class="QLabel" name="labelGeometryHeader">
            <property name="text">
             <string>&lt;b&gt;Orbital Cylinder:&lt;/b&gt;</string>
            </property>
           </widget>
          </item>
-         <item row="8" column="0">
-          <widget class="QLabel" name="labelOrbitalDepth">
-           <property name="text">
-            <string>Orbital Depth (mm):</string>
-           </property>
-          </widget>
-         </item>
-         <item row="8" column="1">
-          <layout class="QHBoxLayout" name="orbitalDepthRowLayout">
-           <property name="leftMargin">
-            <number>0</number>
-           </property>
-           <property name="topMargin">
-            <number>0</number>
-           </property>
-           <property name="rightMargin">
-            <number>0</number>
-           </property>
-           <property name="bottomMargin">
-            <number>0</number>
-           </property>
-           <item>
-            <widget class="QDoubleSpinBox" name="orbitalDepthSpinBox">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="toolTip">
-              <string>Maximum depth of the orbital cylinder from the entry rim to the apex (mm). Can be set automatically by placing a posterior boundary point (P button).</string>
-             </property>
-             <property name="minimum">
-              <double>20.000000000000000</double>
-             </property>
-             <property name="maximum">
-              <double>100.000000000000000</double>
-             </property>
-             <property name="singleStep">
-              <double>1.000000000000000</double>
-             </property>
-             <property name="value">
-              <double>55.000000000000000</double>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="placePosteriorMarkupButton">
-             <property name="toolTip">
-              <string>Place a single point at the posterior boundary of the orbit. The orbital depth is automatically updated to its projected distance from the entry plane.</string>
-             </property>
-             <property name="text">
-              <string></string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item row="9" column="0">
+         
+         <item row="10" column="0">
           <widget class="QLabel" name="labelRadiusMargin">
            <property name="text">
             <string>Radius Margin (mm):</string>
            </property>
           </widget>
          </item>
-         <item row="9" column="1">
+         <item row="10" column="1">
           <widget class="QDoubleSpinBox" name="radiusMarginSpinBox">
            <property name="toolTip">
             <string>Margin beyond the estimated orbital rim radius (mm)</string>
@@ -821,21 +777,21 @@
            </property>
           </widget>
          </item>
-         <item row="10" column="0" colspan="2">
+         <item row="11" column="0" colspan="2">
           <widget class="QLabel" name="labelFMHeader">
            <property name="text">
             <string>&lt;b&gt;Fast Marching Parameters:&lt;/b&gt;</string>
            </property>
           </widget>
          </item>
-         <item row="11" column="0">
+         <item row="12" column="0">
           <widget class="QLabel" name="labelStoppingValue">
            <property name="text">
             <string>Stopping Value (mm):</string>
            </property>
           </widget>
          </item>
-         <item row="11" column="1">
+         <item row="12" column="1">
           <widget class="QDoubleSpinBox" name="stoppingValueSpinBox">
            <property name="toolTip">
             <string>Stopping time of the Fast Marching algorithm in mm. Larger values → more volume. Rule of thumb: ~0.5 × orbital depth</string>
@@ -854,14 +810,14 @@
            </property>
           </widget>
          </item>
-         <item row="12" column="0">
+         <item row="13" column="0">
           <widget class="QLabel" name="labelSpeedSigma">
            <property name="text">
             <string>Speed Sigma (HU):</string>
            </property>
           </widget>
          </item>
-         <item row="12" column="1">
+         <item row="13" column="1">
           <widget class="QDoubleSpinBox" name="speedSigmaSpinBox">
            <property name="toolTip">
             <string>Width of the Gaussian speed function in HU units. Smaller values → sharper tissue boundaries</string>
@@ -880,14 +836,14 @@
            </property>
           </widget>
          </item>
-         <item row="13" column="0">
+         <item row="14" column="0">
           <widget class="QLabel" name="labelPosteriorBoost">
            <property name="text">
             <string>Posterior Boost:</string>
            </property>
           </widget>
          </item>
-         <item row="13" column="1">
+         <item row="14" column="1">
           <widget class="QDoubleSpinBox" name="posteriorBoostSpinBox">
            <property name="toolTip">
             <string>Additional weighting of deep voxels (0 = off, &gt;0 = stronger posterior). Prevents anterior leakage</string>
@@ -909,21 +865,21 @@
            </property>
           </widget>
          </item>
-         <item row="14" column="0" colspan="2">
+         <item row="15" column="0" colspan="2">
           <widget class="QLabel" name="labelOutputHeader">
            <property name="text">
             <string>&lt;b&gt;Output:&lt;/b&gt;</string>
            </property>
           </widget>
          </item>
-         <item row="15" column="0">
+         <item row="16" column="0">
           <widget class="QLabel" name="labelShowSeed">
            <property name="text">
             <string>Show Seed Point:</string>
            </property>
           </widget>
          </item>
-         <item row="15" column="1">
+         <item row="16" column="1">
           <widget class="QCheckBox" name="showSeedCheckBox">
            <property name="toolTip">
             <string>Display the seed point as a fiducial marker in the scene (for verification)</string>
@@ -933,14 +889,14 @@
            </property>
           </widget>
          </item>
-         <item row="16" column="0">
+         <item row="17" column="0">
           <widget class="QLabel" name="labelSeedMode">
            <property name="text">
             <string>Seed Mode:</string>
            </property>
           </widget>
          </item>
-         <item row="16" column="1">
+         <item row="17" column="1">
           <layout class="QVBoxLayout" name="seedModeLayout">
            <property name="leftMargin">
             <number>0</number>
@@ -992,7 +948,7 @@
            </item>
           </layout>
          </item>
-         <item row="17" column="0">
+         <item row="18" column="0">
           <widget class="QLabel" name="labelContraPosition">
            <property name="visible">
             <bool>false</bool>
@@ -1002,7 +958,7 @@
            </property>
           </widget>
          </item>
-         <item row="17" column="1">
+         <item row="18" column="1">
            <widget class="QWidget" name="positionContralateralWidget">
             <layout class="QVBoxLayout" name="positionContralateralLayout">
             <property name="leftMargin">
@@ -1033,7 +989,7 @@
             </layout>
            </widget>
          </item>
-         <item row="18" column="0">
+         <item row="19" column="0">
           <widget class="QLabel" name="labelModelSeed">
            <property name="visible">
             <bool>false</bool>
@@ -1043,7 +999,7 @@
            </property>
           </widget>
          </item>
-         <item row="18" column="1">
+         <item row="19" column="1">
           <widget class="QWidget" name="modelSeedWidget">
             <layout class="QVBoxLayout" name="modelSeedLayout">
             <property name="leftMargin">
@@ -1140,7 +1096,7 @@
             </layout>
           </widget>
          </item>
-         <item row="19" column="0" colspan="2">
+         <item row="20" column="0" colspan="2">
           <widget class="QLabel" name="labelPostprocessingHeader">
            <property name="text">
             <string>&lt;b&gt;Post-processing:&lt;/b&gt;</string>
@@ -1148,7 +1104,7 @@
           </widget>
          </item>
 
-         <item row="20" column="0">
+         <item row="21" column="0">
           <widget class="QLabel" name="labelRemoveSatellites">
            <property name="text">
             <string>Remove Satellites:</string>
@@ -1156,7 +1112,7 @@
           </widget>
          </item>
 
-         <item row="20" column="1">
+         <item row="21" column="1">
           <widget class="QCheckBox" name="removeSatellitesCheckBox">
            <property name="toolTip">
             <string>Remove small disconnected regions (satellites / trailing artefacts) after segmentation. Keeps only components whose effective diameter exceeds the threshold below.</string>
@@ -1167,7 +1123,7 @@
           </widget>
          </item>
 
-         <item row="21" column="0">
+         <item row="22" column="0">
           <widget class="QLabel" name="labelSatelliteDiam">
            <property name="text">
             <string>Min. Diameter (mm):</string>
@@ -1175,7 +1131,7 @@
           </widget>
          </item>
 
-         <item row="21" column="1">
+         <item row="22" column="1">
           <widget class="QDoubleSpinBox" name="satelliteDiamSpinBox">
            <property name="toolTip">
             <string>Sphere-equivalent diameter threshold (mm). Connected components smaller than this are removed as satellite regions.</string>
@@ -1195,7 +1151,7 @@
           </widget>
          </item>
 
-         <item row="22" column="0" colspan="2">
+         <item row="23" column="0" colspan="2">
           <widget class="QLabel" name="labelCutoffHeader">
            <property name="text">
             <string>&lt;b&gt;Posteriore Cutoff-Ebene (beide Seiten):&lt;/b&gt;</string>
@@ -1203,7 +1159,7 @@
           </widget>
          </item>
 
-         <item row="23" column="0">
+         <item row="24" column="0">
           <widget class="QLabel" name="labelCutoffPoint">
            <property name="text">
             <string>Cutoff-Punkt:</string>
@@ -1211,7 +1167,7 @@
           </widget>
          </item>
 
-         <item row="23" column="1">
+         <item row="24" column="1">
           <layout class="QHBoxLayout" name="cutoffRowLayout">
            <item>
             <widget class="qMRMLNodeComboBox" name="cutoffNodeSelector" native="true">
@@ -1251,7 +1207,7 @@
           </layout>
          </item>
 
-         <item row="24" column="0">
+         <item row="25" column="0">
           <widget class="QLabel" name="labelCutoffPosition">
            <property name="text">
             <string>Position:</string>
@@ -1259,7 +1215,7 @@
           </widget>
          </item>
 
-         <item row="24" column="1">
+         <item row="25" column="1">
           <widget class="QLabel" name="cutoffPositionLabel">
            <property name="text">
             <string>nicht gesetzt</string>
@@ -1287,11 +1243,32 @@
        </item>
 
        <item>
-        <widget class="QPushButton" name="segmentVolumeButton">
-        <property name="text">
-        <string>Segment Volume</string>
-        </property>
-        </widget>
+        <layout class="QHBoxLayout" name="segmentButtonsLayout">
+         <property name="leftMargin"><number>0</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>0</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <item>
+          <widget class="QPushButton" name="fastMarchingButton">
+           <property name="toolTip">
+            <string>Segment using Fast Marching (propagates from a seed point; respects soft-tissue speed field)</string>
+           </property>
+           <property name="text">
+            <string>Fast Marching</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="thresholdButton">
+           <property name="toolTip">
+            <string>Segment by HU threshold inside the masking cylinder (faster; no seed required)</string>
+           </property>
+           <property name="text">
+            <string>Threshold</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
 
        <item>
@@ -1305,7 +1282,7 @@
        <item>
         <widget class="QPushButton" name="selectIslandButton">
         <property name="text">
-        <string>Pick Island</string>
+        <string>Remove Islands</string>
         </property>
         </widget>
        </item>
@@ -1321,7 +1298,7 @@
        <item>
         <widget class="QPushButton" name="openSegmentEditorButton">
          <property name="enabled">
-          <bool>false</bool>
+          <bool>true</bool>
          </property>
          <property name="toolTip">
           <string>Opens the Segment Editor with the Scissors tool active for manual corrections. The volume is automatically recalculated after editing.</string>
