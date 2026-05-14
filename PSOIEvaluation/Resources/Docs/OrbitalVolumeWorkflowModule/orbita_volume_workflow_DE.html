@@ -146,16 +146,18 @@ Workflow</h1>
       <li><a href="#orbital-plane-auswählen"
       id="toc-orbital-plane-auswählen">2.1 Orbital Plane
       auswählen</a></li>
-      <li><a href="#hu-fenster-einstellen"
-      id="toc-hu-fenster-einstellen">2.2 HU-Fenster einstellen</a></li>
-      <li><a href="#seed-einstellungen" id="toc-seed-einstellungen">2.3
-      Seed-Einstellungen</a></li>
+      <li><a href="#hu-fenster-und-gewebeoptionen-einstellen"
+      id="toc-hu-fenster-und-gewebeoptionen-einstellen">2.2 HU-Fenster
+      und Gewebeoptionen einstellen</a></li>
+      <li><a href="#seed-einstellungen-fast-marching"
+      id="toc-seed-einstellungen-fast-marching">2.3 Seed-Einstellungen
+      (Fast Marching)</a></li>
       <li><a href="#posteriore-begrenzung-erforderlich"
       id="toc-posteriore-begrenzung-erforderlich">2.4 Posteriore
       Begrenzung (erforderlich)</a></li>
-      <li><a href="#fast-marching-parameter"
-      id="toc-fast-marching-parameter">2.5
-      Fast-Marching-Parameter</a></li>
+      <li><a href="#segmentierungsparameter"
+      id="toc-segmentierungsparameter">2.5
+      Segmentierungsparameter</a></li>
       <li><a href="#nachbearbeitung-satelliten-entfernen"
       id="toc-nachbearbeitung-satelliten-entfernen">2.6 Nachbearbeitung:
       Satelliten entfernen</a></li>
@@ -184,7 +186,7 @@ Workflow</h1>
 	<div class="bd-content ps-lg-2">
 	  <p><strong>Modul:</strong> OrbitalVolumeWorkflowModule<br />
   <strong>Zweck:</strong> Segmentierung des intraorbitalen Volumens aus
-  CT-Datensätzen mittels Fast Marching<br />
+  CT-Datensätzen<br />
   <strong>Zielgruppe:</strong> Klinisches Personal und Forscher im
   Bereich der Orbitachirurgie</p>
   <hr />
@@ -217,8 +219,34 @@ Workflow</h1>
   </tr>
   <tr>
   <td><strong>Schritt 2</strong></td>
-  <td>Segmentierung des intraorbitalen Volumens mittels
-  Fast-Marching-Algorithmus</td>
+  <td>Segmentierung des intraorbitalen Volumens mittels Fast-Marching-
+  oder Schwellenwert-Algorithmus</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>Das Modul bietet zwei Segmentierungsmethoden:</p>
+  <table>
+  <colgroup>
+  <col style="width: 40%" />
+  <col style="width: 59%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Methode</th>
+  <th>Beschreibung</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Fast Marching</strong></td>
+  <td>Propagiert von einem Seed-Punkt aus durch das Weichgewebe;
+  reagiert auf HU-Gradienten. Präziser, erfordert
+  Seed-Konfiguration.</td>
+  </tr>
+  <tr>
+  <td><strong>Threshold</strong></td>
+  <td>Alle Voxel im Maskierzylinder innerhalb des HU-Fensters werden
+  direkt segmentiert. Schneller, kein Seed nötig.</td>
   </tr>
   </tbody>
   </table>
@@ -364,8 +392,14 @@ Workflow</h1>
   <h2 id="orbital-plane-auswählen">2.1 Orbital Plane auswählen</h2>
   <p>Wählen Sie im Feld <strong>Orbital Plane (Mesh)</strong> das in
   Schritt 1 erstellte Mesh der aktiven Seite aus.</p>
-  <h2 id="hu-fenster-einstellen">2.2 HU-Fenster einstellen</h2>
+  <h2 id="hu-fenster-und-gewebeoptionen-einstellen">2.2 HU-Fenster und
+  Gewebeoptionen einstellen</h2>
   <table>
+  <colgroup>
+  <col style="width: 30%" />
+  <col style="width: 30%" />
+  <col style="width: 38%" />
+  </colgroup>
   <thead>
   <tr>
   <th>Parameter</th>
@@ -376,22 +410,35 @@ Workflow</h1>
   <tbody>
   <tr>
   <td>HU Min</td>
-  <td>Untergrenze des Gewebetyps für den Seed-Punkt</td>
+  <td>Untergrenze des Gewebetyps (Weichgewebe / Fettgewebe)</td>
   <td>−200 HU</td>
   </tr>
   <tr>
   <td>HU Max</td>
-  <td>Obergrenze des Gewebetyps für den Seed-Punkt</td>
+  <td>Obergrenze des Gewebetyps (Knochen wird ausgeschlossen)</td>
   <td>+300 HU</td>
+  </tr>
+  <tr>
+  <td><strong>Treat air as soft tissue</strong></td>
+  <td>Luftgefüllte Voxel (&lt; −500 HU) werden vor der Segmentierung in
+  der Orbita-Region auf einen Weichgewebewert remappt. Verhindert, dass
+  Luft als Barriere wirkt (z. B. bei Orbitafrakturen mit
+  Pneumoorbita).</td>
+  <td>aus</td>
   </tr>
   </tbody>
   </table>
-  <p>Das HU-Fenster begrenzt, in welchem Gewebetyp der automatische
-  Seed-Punkt gesucht wird (typisch: Weichgewebe / Fettgewebe der
-  Orbita).<br />
+  <p>Das HU-Fenster begrenzt, in welchem Gewebetyp der Seed-Punkt
+  gesucht bzw. das Threshold-Segment gebildet wird.<br />
   Die Werte können schnell über das <strong>Preset-Dropdown</strong>
   (Schritt 0) gesetzt werden.</p>
-  <h2 id="seed-einstellungen">2.3 Seed-Einstellungen</h2>
+  <h2 id="seed-einstellungen-fast-marching">2.3 Seed-Einstellungen (Fast
+  Marching)</h2>
+  <blockquote>
+  <p><strong>Wichtig</strong>: Die Seed-Einstellungen wirken nur bei der
+  <strong>Fast-Marching</strong>-Methode. Beim Threshold-Verfahren wird
+  kein Seed benötigt.</p>
+  </blockquote>
   <h3 id="modus-auswählen">Modus auswählen</h3>
   <p>Das Modul bietet drei Seed-Modi:</p>
   <table>
@@ -457,7 +504,7 @@ Workflow</h1>
   für die linke Seite genutzt werden soll).</li>
   <li>Klicken Sie auf <strong>Position Model</strong>.<br />
   Das Template wird automatisch am Orbitarand-Zentrum positioniert (mit
-  20 mm posterioarem Versatz).<br />
+  20 mm posteriorem Versatz).<br />
   In den 2D-Schichtansichten erscheinen Interaction-Handles zur
   manuellen Feinjustierung per Translation, Rotation und
   Skalierung.</li>
@@ -468,21 +515,25 @@ Workflow</h1>
   </blockquote>
   <h2 id="posteriore-begrenzung-erforderlich">2.4 Posteriore Begrenzung
   (erforderlich)</h2>
-  <p>Klicken Sie auf <strong>P</strong> neben dem Feld <strong>Orbital
-  Depth (mm)</strong>, um einen Markup-Punkt zu setzen.<br />
-  Platzieren Sie diesen an der posterioren Orbitawand (z. B. am Apex
-  orbitae in der sagittalen Ansicht).<br />
-  Das Modul berechnet daraus automatisch die Tiefe der Orbita und trägt
-  den Wert in das Feld <strong>Orbital Depth (mm)</strong> ein.</p>
+  <p>Klicken Sie auf den Platzierungsknopf neben
+  <strong>Cutoff-Punkt</strong> und setzen Sie einen Markup-Punkt an der
+  posterioren Orbitawand (z. B. am Apex orbitae in der sagittalen
+  Ansicht).<br />
+  Die Tiefe der Orbita wird automatisch aus dem Abstand zwischen
+  Cutoff-Punkt und Eintrittsebenenzentrum berechnet — kein manuelles
+  Eintippen nötig.</p>
+  <p>Ein bereits in der Szene vorhandener Cutoff-Knoten kann über das
+  Dropdown <strong>Cutoff-Punkt</strong> direkt zugewiesen und für beide
+  Seiten wiederverwendet werden.</p>
   <blockquote>
   <p><strong>Hinweis:</strong> Ohne gesetzten Cutoff-Punkt kann die
   Segmentierung nicht gestartet werden.</p>
   </blockquote>
   <blockquote>
   <p><strong>Screenshot-Platzhalter:</strong><br />
-  <code>[Screenshot: Posteriorer Markup-Punkt in der sagittalen Ansicht, Orbita-Tiefe im Feld]</code></p>
+  <code>[Screenshot: Posteriorer Markup-Punkt in der sagittalen Ansicht]</code></p>
   </blockquote>
-  <h2 id="fast-marching-parameter">2.5 Fast-Marching-Parameter</h2>
+  <h2 id="segmentierungsparameter">2.5 Segmentierungsparameter</h2>
   <table>
   <colgroup>
   <col style="width: 28%" />
@@ -498,14 +549,9 @@ Workflow</h1>
   </thead>
   <tbody>
   <tr>
-  <td>Orbital Depth (mm)</td>
-  <td>Maximale Tiefe der Ausbreitung entlang der Orbitalachse</td>
-  <td>50–60 mm (individuell)</td>
-  </tr>
-  <tr>
   <td>Radius Margin (mm)</td>
   <td>Sicherheitspuffer um den Orbitarand</td>
-  <td>5 mm</td>
+  <td>2 mm</td>
   </tr>
   <tr>
   <td>Stopping Value</td>
@@ -522,10 +568,16 @@ Workflow</h1>
   <tr>
   <td>Posterior Boost</td>
   <td>Verstärkungsfaktor posterior der Eintrittsebene</td>
-  <td>1,5</td>
+  <td>2,5</td>
   </tr>
   </tbody>
   </table>
+  <blockquote>
+  <p><strong>Hinweis:</strong> <strong>Stopping Value</strong> und
+  <strong>Speed Sigma</strong> wirken nur bei der Fast-Marching-Methode.
+  Die Orbital-Tiefe ergibt sich stets automatisch aus dem
+  Cutoff-Punkt.</p>
+  </blockquote>
   <h2 id="nachbearbeitung-satelliten-entfernen">2.6 Nachbearbeitung:
   Satelliten entfernen</h2>
   <p>Aktivieren Sie <strong>Remove satellite regions</strong>, um nach
@@ -553,53 +605,26 @@ Workflow</h1>
   </tbody>
   </table>
   <h2 id="segmentierung-starten">2.7 Segmentierung starten</h2>
-  <p>Klicken Sie auf <strong>Segment Volume</strong>.<br />
+  <p>Klicken Sie auf <strong>Fast Marching</strong> oder
+  <strong>Threshold</strong>, um die Segmentierung mit der gewünschten
+  Methode zu starten.<br />
   Während der Berechnung zeigt ein Fortschrittsdialog den aktuellen
-  Verarbeitungsschritt an (Fast Marching, Glättung, HU-Schwellenwert
-  etc.).</p>
-  <p>Nach Abschluss der automatischen Nachbearbeitung erscheint ein
-  Dialog mit drei Optionen:</p>
-  <table>
-  <colgroup>
-  <col style="width: 50%" />
-  <col style="width: 50%" />
-  </colgroup>
-  <thead>
-  <tr>
-  <th>Schaltfläche</th>
-  <th>Funktion</th>
-  </tr>
-  </thead>
-  <tbody>
-  <tr>
-  <td><strong>Finish Segmentation</strong></td>
-  <td>Anteriore Kante wird anhand der Eintrittsebene beschnitten
-  (empfohlen für Standardfälle)</td>
-  </tr>
-  <tr>
-  <td><strong>Pick Island</strong></td>
-  <td>Öffnet den Segment Editor zum manuellen Auswählen einer Insel,
-  falls die Segmentierung aus mehreren Teilen besteht</td>
-  </tr>
-  <tr>
-  <td><strong>Inspect</strong></td>
-  <td>Schließt den Dialog ohne Cutoff – zum manuellen Prüfen vor dem
-  Abschluss</td>
-  </tr>
-  </tbody>
-  </table>
-  <p>Das Ergebnis (Volumen in ml, Voxelanzahl, HU am Seed) wird im Modul
-  angezeigt.<br />
-  Die Schichtansichten zeigen automatisch das segmentierte CT als
-  Hintergrund.</p>
+  Verarbeitungsschritt an.</p>
+  <p>Nach Abschluss erscheint ein Hinweisdialog. Prüfen Sie das Ergebnis
+  in den Schichtansichten und der 3D-Ansicht:</p>
+  <ul>
+  <li>Ist das intraorbitale Volumen vollständig gefüllt?</li>
+  <li>Gibt es Ausläufer in angrenzende Strukturen (Nasennebenhöhlen,
+  Schädelinneres)?</li>
+  </ul>
   <blockquote>
   <p><strong>Screenshot-Platzhalter:</strong><br />
-  <code>[Screenshot: Abgeschlossene Segmentierung in axialer und koronarer Ansicht, Ergebnis-Label sichtbar]</code></p>
+  <code>[Screenshot: Segmentierungsergebnis nach dem ersten Durchlauf – Überprüfung in axialer und koronarer Ansicht]</code></p>
   </blockquote>
   <h2 id="nachbearbeitung-nach-der-segmentierung">2.8 Nachbearbeitung
   nach der Segmentierung</h2>
-  <p>Nach der Segmentierung stehen zwei Schaltflächen zur manuellen
-  Nachbearbeitung bereit:</p>
+  <p>Nach der Verifikation stehen folgende Schaltflächen zur
+  Verfügung:</p>
   <table>
   <colgroup>
   <col style="width: 50%" />
@@ -613,27 +638,45 @@ Workflow</h1>
   </thead>
   <tbody>
   <tr>
-  <td><strong>Pick Island</strong></td>
-  <td>Öffnet den Segment Editor und wartet auf die Auswahl einer Insel
-  in einer Schichtansicht. Die ausgewählte Insel wird behalten, alle
-  anderen Teile des Segments werden entfernt.</td>
+  <td><strong>Remove Extrusions</strong></td>
+  <td>Entfernt Ausläufer durch morphologisches Opening. Danach werden
+  isolierte Inseln automatisch bereinigt – es bleibt die Insel erhalten,
+  die dem Seed-Punkt bzw. Orbita-Zentrum am nächsten liegt.</td>
   </tr>
   <tr>
-  <td><strong>Perform Cutoff</strong></td>
-  <td>Beschneidet das Segment anterior anhand der Eintrittsebene
-  (entspricht „Finish Segmentation” im Dialog). Sinnvoll, wenn bei
-  <strong>Inspect</strong> zunächst keine automatische Beschneidung
-  erfolgt ist.</td>
+  <td><strong>Remove Islands</strong></td>
+  <td>Behält manuell nur die korrekte Insel, falls nach dem Opening noch
+  getrennte Komponenten vorhanden sind. Verwendet dieselbe ankerbasierte
+  Logik wie der automatische Schritt.</td>
+  </tr>
+  <tr>
+  <td><strong>Crop Entrance Plane</strong></td>
+  <td>Beschneidet das Segment anterior anhand der Eintrittsebene, um
+  anteriore Überlappungen zu entfernen.</td>
   </tr>
   </tbody>
   </table>
-  <p>Diese Funktionen wirken auf die Segmentierung der aktuell aktiven
-  Seite.</p>
+  <p><strong>Empfohlene Reihenfolge:</strong></p>
+  <ol type="1">
+  <li>Segmentierungsergebnis prüfen.</li>
+  <li><strong>Remove Extrusions</strong> klicken → Ausläufer und
+  isolierte Inseln werden automatisch entfernt.</li>
+  <li>Falls noch Inseln verbleiben: <strong>Remove Islands</strong>
+  klicken.</li>
+  <li><strong>Crop Entrance Plane</strong> klicken, um den anterioren
+  Rand auf die Eintrittsebenentiefe zu begrenzen.</li>
+  </ol>
+  <blockquote>
+  <p><strong>Screenshot-Platzhalter:</strong><br />
+  <code>[Screenshot: Abgeschlossene Segmentierung nach Nachbearbeitung – sauberes Volumen in axialer und koronarer Ansicht]</code></p>
+  </blockquote>
+  <p>Das Ergebnis (Volumen in ml, Voxelanzahl) wird im Modul
+  angezeigt.</p>
   <h3 id="segmentierungs-node-manuell-zuweisen">Segmentierungs-Node
   manuell zuweisen</h3>
-  <p>Unterhalb der Schaltflächen <strong>Segment Volume</strong> /
-  <strong>Clear</strong> befindet sich das Dropdown
-  <strong>Segmentation:</strong>.<br />
+  <p>Unterhalb der Schaltflächen <strong>Fast Marching</strong> /
+  <strong>Threshold</strong> / <strong>Clear</strong> befindet sich das
+  Dropdown <strong>Segmentation:</strong>.<br />
   Hier kann ein bereits in der Szene vorhandener
   <code>vtkMRMLSegmentationNode</code> der aktiven Seite manuell
   zugewiesen werden.<br />
@@ -647,8 +690,9 @@ Workflow</h1>
   </blockquote>
   <h2 id="manuelle-nachbearbeitung-optional">2.9 Manuelle
   Nachbearbeitung (optional)</h2>
-  <p>Klicken Sie auf <strong>Edit in Segment Editor (Scissors)</strong>,
-  um die Segmentierung manuell zu korrigieren.<br />
+  <p>Klicken Sie jederzeit auf <strong>Edit in Segment Editor
+  (Scissors)</strong>, um die aktive Segmentierung manuell zu
+  korrigieren.<br />
   Das Volumen wird nach der Bearbeitung automatisch neu berechnet.</p>
   <h2 id="ergebnisse-exportieren">2.10 Ergebnisse exportieren</h2>
   <p>Klicken Sie auf <strong>Export Results (Excel)</strong>.<br />
@@ -687,8 +731,12 @@ Workflow</h1>
   <td>Manuell / Gegenseite gespiegelt / Modellbasiert</td>
   </tr>
   <tr>
+  <td>Segmentierungsmethode</td>
+  <td>Fast Marching / Threshold</td>
+  </tr>
+  <tr>
   <td>HU Min / Max</td>
-  <td>Gewebefenster für den Seed</td>
+  <td>Gewebefenster</td>
   </tr>
   <tr>
   <td>Stopping Value</td>
@@ -730,6 +778,10 @@ Workflow</h1>
   <li><strong>Reihenfolge:</strong> Beginnen Sie stets mit der weniger
   stark betroffenen / leichter zu segmentierenden Seite, da diese dann
   als Vorlage für die Gegenseiten-Spiegelung dienen kann.</li>
+  <li><strong>Methodenwahl:</strong> Verwenden Sie <strong>Fast
+  Marching</strong> für präzise Fälle mit gutem Weichgewebekontrast.
+  <strong>Threshold</strong> eignet sich als schnelle Alternative oder
+  zur Verifikation.</li>
   <li><strong>Preset:</strong> Verwenden Sie <strong>CT Bone
   Window</strong> für diagnostische CTs und <strong>Intraoperative
   CBCT</strong> für intraoperative Aufnahmen als Ausgangspunkt. Die
@@ -737,8 +789,14 @@ Workflow</h1>
   wechselt dabei automatisch auf <strong>Manual</strong>.</li>
   <li><strong>HU-Fenster:</strong> Bei stark eingebluteten Orbitas ggf.
   HU Max auf 60–80 reduzieren, um Hämatome auszuschließen.</li>
+  <li><strong>Treat air as soft tissue:</strong> Aktivieren bei
+  Pneumoorbita oder Frakturen mit Lufteintritt, damit Luft nicht als
+  Barriere die Segmentierung unterbricht.</li>
   <li><strong>Stopping Value:</strong> Bei Grenzüberschreitungen in den
   Nasennebenhöhlen den Wert reduzieren (z. B. von 25 auf 12).</li>
+  <li><strong>Remove Extrusions:</strong> Immer als ersten
+  Nachbearbeitungsschritt ausführen – bereinigt Ausläufer und isolierte
+  Inseln in einem Schritt.</li>
   <li><strong>Parameter-Sets:</strong> Für jeden Patienten empfiehlt
   sich ein eigenes Parameter-Set (im Dropdown oben mit „+” erstellen),
   um die Einstellungen dauerhaft zu speichern. Der Export erfasst
@@ -772,9 +830,24 @@ Workflow</h1>
   prüfen</td>
   </tr>
   <tr>
+  <td>Segmentierung unterbrochen durch Luft (Pneumoorbita)</td>
+  <td>Luftvoxel wirken als Barriere</td>
+  <td><strong>Treat air as soft tissue</strong> aktivieren</td>
+  </tr>
+  <tr>
+  <td>Segmentierung nach Threshold zu groß</td>
+  <td>HU Max zu hoch – Knochen eingeschlossen</td>
+  <td>HU Max auf 200–250 reduzieren</td>
+  </tr>
+  <tr>
   <td>Sehr kleines Segment bei Modell-Modus</td>
   <td>Skalierung zu stark oder Modell außerhalb CT</td>
   <td>Position Model erneut klicken, Template prüfen</td>
+  </tr>
+  <tr>
+  <td>Isolierte Inseln nach Remove Extrusions</td>
+  <td>Verbindung zwischen Insel und Hauptvolumen zu dünn</td>
+  <td><strong>Remove Islands</strong> klicken</td>
   </tr>
   <tr>
   <td>Kein Ergebnis nach Export</td>
