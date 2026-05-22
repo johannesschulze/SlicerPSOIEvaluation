@@ -116,6 +116,8 @@ class OrbitalVolumeWorkflowModuleParameterNode:
     modelSeedTransformLeft:  vtkMRMLLinearTransformNode
     modelSeedTransformRight: vtkMRMLLinearTransformNode
     posteriorCutoffNode:     vtkMRMLMarkupsFiducialNode   # shared, beide Seiten
+    rimLandmarkNodeLeft:     vtkMRMLMarkupsFiducialNode
+    rimLandmarkNodeRight:    vtkMRMLMarkupsFiducialNode
     removeSatellitesLeft:   bool  = True
     removeSatellitesRight:  bool  = True
     satelliteDiamLeft:      float = 3.0
@@ -132,6 +134,29 @@ class OrbitalVolumeWorkflowModuleParameterNode:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Keys match combobox item text; "Manual" has no entry (never applied programmatically).
+ORBITAL_RIM_LANDMARKS = [
+    ("L1",  "Supraorbitalforamen / Incisura supraorbitalis",
+             "Übergang mediales Drittel / laterale zwei Drittel des Supraorbitalrands"),
+    ("L2",  "Mitte Supraorbitalrand",
+             "Scheitelpunkt des Supraorbitalrands zwischen L1 und L3"),
+    ("L3",  "Frontozygomatiksutur",
+             "Lateraler Orbitarand, Höhe Lateralkanthus"),
+    ("L4",  "Mitte lateraler Orbitarand",
+             "Maximale Lateralprojektion des Os zygomaticum"),
+    ("L5",  "Mitte inferiolateraler Orbitarand",
+             "Mitte des Segments L4–L6, Übergang lateral → inferior"),
+    ("L6",  "Sutura zygomaticomaxillaris",
+             "Übergang lateraler → inferiorer Rand"),
+    ("L7",  "Mitte inferiorer Orbitarand",
+             "Mitte des Segments L6–L8"),
+    ("L8",  "Mitte inferomedial / Lacrimalkante inferior",
+             "Mitte des Segments L7–L9, Übergang inferior → medial"),
+    ("L9",  "Frontomaxillarsutur / Lacrimalkante superior",
+             "Übergang medialer → superomedial verlaufender Rand"),
+    ("L10", "Mitte superomedial",
+             "Mitte des Segments L9–L1, Region der Trochlea"),
+]
+
 SEGMENTATION_PRESETS = {
     "CT Bone Window": {
         "huMin": -300, "huMax": 600,
@@ -169,6 +194,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self._segIds       = {True: None, False: None}
         self._segObservers         = {True: None, False: None}
         self._cutoffMarkupObserver = None
+        self._landmarkObservers    = {True: None, False: None}  # (node, [obs_tags…]) per side
         self._volumeUpdateSide = None
         self._applyingPreset = False
         self._volumeUpdateTimer = qt.QTimer()
@@ -270,6 +296,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         #self.ui.btnSideRight.setIcon(qt.QIcon(self.resourcePath("Icons/orbit_right.png")))
 
         # Collapsibles
+        self.ui.pageLandmarks.connect("clicked(bool)", lambda x: self.onPageCollapsibleClicked(self.ui.pageLandmarks, x))
         self.ui.pageOrbitalSurface.connect("clicked(bool)", lambda x: self.onPageCollapsibleClicked(self.ui.pageOrbitalSurface, x))
         self.ui.pageVolumeSegmentation.connect("clicked(bool)", lambda x: self.onPageCollapsibleClicked(self.ui.pageVolumeSegmentation, x))
 
@@ -294,6 +321,15 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             "toggled(bool)", self.onToggleVolumeRendering)
         self.ui.resampleCTButton.connect("clicked(bool)", self.onResampleCTButton)
 
+        # Landmark workflow buttons
+        self.ui.newLandmarkNodeButton.connect("clicked(bool)", self.onNewLandmarkNodeButton)
+        self.ui.landmarkStartButton.connect("clicked(bool)",   self.onStartLandmarkButton)
+        self.ui.landmarkPrevButton.connect("clicked(bool)",    self.onLandmarkPrevButton)
+        self.ui.curveFromLandmarksButton.connect("clicked(bool)", self.onCurveFromLandmarksButton)
+        self.ui.landmarkNodeSelector.connect(
+            "currentNodeChanged(vtkMRMLNode*)", self.onLandmarkNodeSelectorChanged
+        )
+
         # Neue-Kurve-Button
         self.ui.createCurveButton.connect("clicked(bool)", self.onCreateCurveButton)
         self.ui.createCurveButton.setIcon(qt.QIcon(self.resourcePath("Icons/MarkupsClosedCurveMouseModePlace.png")))
@@ -315,6 +351,14 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             obs  = self._segObservers.get(side)
             if node is not None and obs is not None:
                 node.RemoveObserver(obs)
+            lm_entry = self._landmarkObservers.get(side)
+            if lm_entry is not None:
+                lm_node, lm_obs_list = lm_entry
+                for obs in lm_obs_list:
+                    try:
+                        lm_node.RemoveObserver(obs)
+                    except Exception:
+                        pass
         if self._parameterNode is not None:
             cutoff_node = getattr(self._parameterNode, "posteriorCutoffNode", None)
             if cutoff_node is not None and self._cutoffMarkupObserver is not None:
@@ -500,6 +544,17 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
             if cutoff_node is not None and self._cutoffMarkupObserver is not None:
                 cutoff_node.RemoveObserver(self._cutoffMarkupObserver)
             self._cutoffMarkupObserver = None
+            # Landmark-Observer vom alten PN lösen
+            for side in [True, False]:
+                lm_entry = self._landmarkObservers.get(side)
+                if lm_entry is not None:
+                    lm_node, lm_obs_list = lm_entry
+                    for obs in lm_obs_list:
+                        try:
+                            lm_node.RemoveObserver(obs)
+                        except Exception:
+                            pass
+            self._landmarkObservers = {True: None, False: None}
             self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
             self._parameterNodeGuiTag = None
 
@@ -562,6 +617,21 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self.ui.cutoffNodeSelector.blockSignals(wasBlocked)
         self._onCutoffMarkupModified()
 
+        # Landmark-Observer an vorhandene Nodes des neuen PN hängen
+        self._landmarkObservers = {True: None, False: None}
+        for isLeft, attr in [(True, "rimLandmarkNodeLeft"), (False, "rimLandmarkNodeRight")]:
+            lm_node = getattr(self._parameterNode, attr, None)
+            if lm_node is not None:
+                obs_defined = lm_node.AddObserver(
+                    slicer.vtkMRMLMarkupsNode.PointPositionDefinedEvent,
+                    lambda c, e, side=isLeft: self._onLandmarkPointAdded(side),
+                )
+                obs_removed = lm_node.AddObserver(
+                    slicer.vtkMRMLMarkupsNode.PointRemovedEvent,
+                    lambda c, e, side=isLeft: self._updateLandmarkUI(side),
+                )
+                self._landmarkObservers[isLeft] = (lm_node, [obs_defined, obs_removed])
+
         # ctVolumeSelector: sync to new PN's volume; no signal blocking so that
         # onCTVolumeChanged fires and the display updates correctly.
         self.ui.ctVolumeSelector.setCurrentNode(self._parameterNode.ctVolume)
@@ -619,6 +689,15 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         self._loadParamsForSide(isLeft)
         self.ui.createSurfaceButton.setEnabled(self._curveNodes[isLeft] is not None)
         self.ui.surfaceResultLabel.setText(self._surfaceTexts[isLeft])
+
+        # Landmark selector
+        if self._parameterNode:
+            lm_node = (self._parameterNode.rimLandmarkNodeLeft if isLeft
+                       else self._parameterNode.rimLandmarkNodeRight)
+            self.ui.landmarkNodeSelector.blockSignals(True)
+            self.ui.landmarkNodeSelector.setCurrentNode(lm_node)
+            self.ui.landmarkNodeSelector.blockSignals(False)
+        self._updateLandmarkUI(isLeft)
 
         # Volumen nach Reload aus vorhandenem Segmentierungsknoten nachmessen
         if not self._segTexts[isLeft] and self._parameterNode is not None:
@@ -774,6 +853,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
     def onToggleVolumeRendering(self, checked: bool) -> None:
         if self._vrDisplayNode is not None:
             self._vrDisplayNode.SetVisibility(checked)
+            self._vrDisplayNode.SetVisibility3D(checked)
         self.ui.toggleVolumeRenderingButton.setText(_("3D on") if not checked else _("3D off"))
 
     def onCTVolumeChanged(self, volume_node) -> None:
@@ -1830,6 +1910,203 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         #     self.ui.stepsToolbox.setCurrentIndex(self.ui.stepsToolbox.currentIndex + 1)
         return
 
+    # ------------------------------------------------------------------
+    # Signalhandler – Landmark workflow
+    # ------------------------------------------------------------------
+
+    def onLandmarkNodeSelectorChanged(self, node) -> None:
+        if self._parameterNode is None:
+            return
+        isLeft = self._parameterNode.sideIsLeft
+        # Remove observer from previous node
+        old_entry = self._landmarkObservers.get(isLeft)
+        if old_entry is not None:
+            old_node, old_obs_list = old_entry
+            for obs in old_obs_list:
+                try:
+                    old_node.RemoveObserver(obs)
+                except Exception:
+                    pass
+            self._landmarkObservers[isLeft] = None
+        # Store in PN
+        if isLeft:
+            self._parameterNode.rimLandmarkNodeLeft  = node
+        else:
+            self._parameterNode.rimLandmarkNodeRight = node
+        # Attach new observers
+        if node is not None:
+            obs_defined = node.AddObserver(
+                slicer.vtkMRMLMarkupsNode.PointPositionDefinedEvent,
+                lambda c, e, side=isLeft: self._onLandmarkPointAdded(side),
+            )
+            obs_removed = node.AddObserver(
+                slicer.vtkMRMLMarkupsNode.PointRemovedEvent,
+                lambda c, e, side=isLeft: self._updateLandmarkUI(side),
+            )
+            self._landmarkObservers[isLeft] = (node, [obs_defined, obs_removed])
+        self._updateLandmarkUI(isLeft, lm_node=node)
+
+    def _makeLandmarkNode(self, isLeft: bool):
+        """Creates and registers a fresh landmark node for the given side."""
+        if self._parameterNode is None:
+            return None
+        pn_name = self._parameterNode.parameterNode.GetName()
+        side_suffix = "L" if isLeft else "R"
+        node = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLMarkupsFiducialNode",
+            f"{pn_name}_OrbitalRimLandmarks_{side_suffix}",
+        )
+        node.SetMaximumNumberOfControlPoints(len(ORBITAL_RIM_LANDMARKS))
+        node.CreateDefaultDisplayNodes()
+        disp = node.GetDisplayNode()
+        if disp:
+            disp.SetGlyphScale(3.5)
+            disp.SetTextScale(3.0)
+            color = (0.2, 0.7, 1.0) if isLeft else (1.0, 0.55, 0.1)
+            disp.SetSelectedColor(*color)
+            disp.SetColor(*color)
+        self._placeInFolder(node, isLeft)
+        return node
+
+    def onNewLandmarkNodeButton(self) -> None:
+        if self._parameterNode is None:
+            return
+        isLeft = self._parameterNode.sideIsLeft
+        node = self._makeLandmarkNode(isLeft)
+        if node is None:
+            return
+        # Block the signal to prevent a double-trigger, then call the handler
+        # explicitly — qMRMLNodeComboBox may have auto-selected the new scene node
+        # before setCurrentNode runs, in which case currentNodeChanged never fires.
+        wasBlocked = self.ui.landmarkNodeSelector.blockSignals(True)
+        self.ui.landmarkNodeSelector.setCurrentNode(node)
+        self.ui.landmarkNodeSelector.blockSignals(wasBlocked)
+        self.onLandmarkNodeSelectorChanged(node)
+
+    def onStartLandmarkButton(self) -> None:
+        if self._parameterNode is None:
+            return
+        isLeft = self._parameterNode.sideIsLeft
+        lm_node = (self._parameterNode.rimLandmarkNodeLeft if isLeft
+                   else self._parameterNode.rimLandmarkNodeRight)
+        if lm_node is None:
+            node = self._makeLandmarkNode(isLeft)
+            if node is None:
+                return
+            wasBlocked = self.ui.landmarkNodeSelector.blockSignals(True)
+            self.ui.landmarkNodeSelector.setCurrentNode(node)
+            self.ui.landmarkNodeSelector.blockSignals(wasBlocked)
+            self.onLandmarkNodeSelectorChanged(node)
+            lm_node = node
+        n = lm_node.GetNumberOfControlPoints()
+        if n >= len(ORBITAL_RIM_LANDMARKS):
+            slicer.util.infoDisplay(_("All 10 landmarks are already placed."))
+            return
+        self._activateLandmarkPlacement(lm_node)
+
+    def onLandmarkPrevButton(self) -> None:
+        if self._parameterNode is None:
+            return
+        isLeft = self._parameterNode.sideIsLeft
+        lm_node = (self._parameterNode.rimLandmarkNodeLeft if isLeft
+                   else self._parameterNode.rimLandmarkNodeRight)
+        if lm_node is None:
+            return
+        n_defined = lm_node.GetNumberOfDefinedControlPoints()
+        if n_defined == 0:
+            return
+        # PointPositionDefinedEvent never fires on removal, so no observer dance needed.
+        # Defined points occupy indices 0..n_defined-1 in sequential placement.
+        lm_node.RemoveNthControlPoint(n_defined - 1)
+        self._updateLandmarkUI(isLeft)
+
+    def onCurveFromLandmarksButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Error creating curve from landmarks."), waitCursor=True):
+            if self._parameterNode is None:
+                return
+            isLeft = self._parameterNode.sideIsLeft
+            lm_node = (self._parameterNode.rimLandmarkNodeLeft if isLeft
+                       else self._parameterNode.rimLandmarkNodeRight)
+            if lm_node is None or lm_node.GetNumberOfControlPoints() < len(ORBITAL_RIM_LANDMARKS):
+                slicer.util.warningDisplay(_("All 10 landmarks must be placed first."))
+                return
+            color = (0.2, 0.7, 1.0) if isLeft else (1.0, 0.55, 0.1)
+            curve_node = self.logic.createCurveFromLandmarks(lm_node, color)
+            self._curveNodes[isLeft] = curve_node
+            self._placeInFolder(curve_node, isLeft)
+            self.ui.curveSelector.blockSignals(True)
+            self.ui.curveSelector.setCurrentNode(curve_node)
+            self.ui.curveSelector.blockSignals(False)
+            self.ui.createSurfaceButton.setEnabled(True)
+
+    def _onLandmarkPointAdded(self, isLeft: bool) -> None:
+        """Called after a landmark position is committed (PointPositionDefinedEvent).
+        GetNumberOfDefinedControlPoints() is exact at this point (no off-by-one).
+        Re-activates placement for the next point because SetNthControlPointLabel()
+        can interrupt Slicer's persistent placement pipeline."""
+        lm_node = (self._parameterNode.rimLandmarkNodeLeft if isLeft
+                   else self._parameterNode.rimLandmarkNodeRight) if self._parameterNode else None
+        if lm_node is None:
+            return
+        n = lm_node.GetNumberOfDefinedControlPoints()
+        # Rename the just-confirmed point (index n-1) to its landmark ID
+        if 1 <= n <= len(ORBITAL_RIM_LANDMARKS):
+            lm_id = ORBITAL_RIM_LANDMARKS[n - 1][0]
+            lm_node.SetNthControlPointLabel(n - 1, lm_id)
+        self._updateLandmarkUI(isLeft)
+        if n >= len(ORBITAL_RIM_LANDMARKS):
+            # All done — exit placement
+            interNode = slicer.app.applicationLogic().GetInteractionNode()
+            interNode.SetPlaceModePersistence(0)
+            interNode.SetCurrentInteractionMode(slicer.vtkMRMLInteractionNode.Select)
+        else:
+            # Re-activate so the next point can be placed immediately.
+            # Safe because n < 10, so we are not past the last landmark.
+            self._activateLandmarkPlacement(lm_node)
+
+    def _activateLandmarkPlacement(self, lm_node) -> None:
+        """Enters Slicer's *persistent* placement mode for the given fiducial node.
+        PlaceModePersistence=1 keeps Slicer in Place mode after each confirmed click,
+        so there is no need to re-activate between landmarks."""
+        selNode = slicer.app.applicationLogic().GetSelectionNode()
+        selNode.SetActivePlaceNodeID(lm_node.GetID())
+        selNode.SetActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+        interNode = slicer.app.applicationLogic().GetInteractionNode()
+        interNode.SetPlaceModePersistence(1)
+        interNode.SetCurrentInteractionMode(slicer.vtkMRMLInteractionNode.Place)
+
+    def _updateLandmarkUI(self, isLeft: bool, lm_node=None) -> None:
+        """Refreshes landmark progress label, description, and button states.
+
+        lm_node may be passed directly (e.g. when the PN has not been written yet);
+        if omitted, the current node is read from the ParameterNode."""
+        if self._parameterNode is None:
+            return
+        if lm_node is None:
+            lm_node = (self._parameterNode.rimLandmarkNodeLeft if isLeft
+                       else self._parameterNode.rimLandmarkNodeRight)
+        # GetNumberOfDefinedControlPoints() excludes the live preview/ghost point
+        # that follows the cursor in placement mode, unlike GetNumberOfControlPoints().
+        n_placed = lm_node.GetNumberOfDefinedControlPoints() if lm_node is not None else 0
+        total = len(ORBITAL_RIM_LANDMARKS)
+        self.ui.landmarkProgressLabel.setText(f"{n_placed} / {total} placed")
+        lines = []
+        for i, (lid, lname, ldesc) in enumerate(ORBITAL_RIM_LANDMARKS):
+            if i < n_placed:
+                lines.append(f'<span style="color:#888;">{lid} – {lname}</span>')
+            elif i == n_placed:
+                lines.append(
+                    f'<b>{lid} – {lname}</b>'
+                    f'<br><i style="color:#555;">{ldesc}</i>'
+                )
+            else:
+                lines.append(f'{lid} – {lname}')
+        self.ui.landmarkCurrentLabel.setText("<br>".join(lines))
+        has_node = lm_node is not None
+        self.ui.landmarkPrevButton.setEnabled(has_node and n_placed > 0)
+        self.ui.landmarkStartButton.setEnabled(has_node and n_placed < total)
+        self.ui.curveFromLandmarksButton.setEnabled(has_node and n_placed >= total)
+
     def onClearSideButton(self) -> None:
         """Löscht alle Segmentierungs-Nodes der aktuell gewählten Seite nach Bestätigung."""
         if self._parameterNode is None:
@@ -2200,6 +2477,7 @@ class OrbitalVolumeWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObserva
         defaultPalette = slicer.app.palette()
 
         themable_widgets = [
+            self.ui.pageLandmarks,
             self.ui.pageVolumeSegmentation,
             self.ui.pageOrbitalSurface,
             self.ui.btnSideLeft,
@@ -2378,6 +2656,27 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         print(f"{'='*55}\n")
 
         return model_node
+
+    def createCurveFromLandmarks(self, landmark_node, color: tuple = (0.2, 0.7, 1.0)):
+        """Creates a vtkMRMLMarkupsClosedCurveNode through all landmarks in L1→L10 order.
+
+        The resulting curve can be passed directly to createOrbitalSurface() (Step 1).
+        """
+        n = landmark_node.GetNumberOfControlPoints()
+        curve_node = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLMarkupsClosedCurveNode",
+            landmark_node.GetName().replace("_OrbitalRimLandmarks_", "_OrbitalRim_"),
+        )
+        for i in range(n):
+            pt = [0.0, 0.0, 0.0]
+            landmark_node.GetNthControlPointPositionWorld(i, pt)
+            curve_node.AddControlPoint(pt)
+        curve_node.CreateDefaultDisplayNodes()
+        disp = curve_node.GetDisplayNode()
+        if disp:
+            disp.SetColor(*color)
+            disp.SetGlyphScale(3.0)
+        return curve_node
 
     def segmentIntraorbitalVolume(
         self,
@@ -2779,14 +3078,22 @@ class OrbitalVolumeWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     # ------------------------------------------------------------------
 
     def _sampleCurvePoints(self, curve_node, subdivision_distance: float):
-        """Resamples the closed curve at uniform arc-length intervals and returns all control points as an (N,3) RAS array."""
-        curve_node.ResampleCurveWorld(subdivision_distance)
-        n = curve_node.GetNumberOfControlPoints()
-        pts = np.zeros((n, 3))
-        for i in range(n):
-            p = [0.0, 0.0, 0.0]
-            curve_node.GetNthControlPointPositionWorld(i, p)
-            pts[i] = p
+        """Resamples the closed curve at uniform arc-length intervals and returns all control points as an (N,3) RAS array.
+        Operates on a temporary copy so the original rim curve is never modified."""
+        tmp = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLMarkupsClosedCurveNode", "_TmpSampleCurve"
+        )
+        try:
+            tmp.Copy(curve_node)
+            tmp.ResampleCurveWorld(subdivision_distance)
+            n = tmp.GetNumberOfControlPoints()
+            pts = np.zeros((n, 3))
+            for i in range(n):
+                p = [0.0, 0.0, 0.0]
+                tmp.GetNthControlPointPositionWorld(i, p)
+                pts[i] = p
+        finally:
+            slicer.mrmlScene.RemoveNode(tmp)
         return pts
 
     def _concavityIndex(self, pts):

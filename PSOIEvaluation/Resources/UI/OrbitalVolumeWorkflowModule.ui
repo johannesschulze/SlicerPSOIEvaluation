@@ -378,6 +378,149 @@
     </spacer>
    </item>
 
+   <item> <!-- Collapsible Orbital Rim Landmarks -->
+    <widget class="ctkCollapsibleButton" name="pageLandmarks">
+     <property name="text">
+      <string>0. Orbital Rim Landmarks (L1–L10, SSM)</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayoutLandmarks">
+      <item>
+       <widget class="QLabel" name="labelLandmarksDescription">
+        <property name="text">
+         <string>&lt;p&gt;Guided placement of &lt;b&gt;10 standardized anatomical landmarks&lt;/b&gt; (L1–L10) along the orbital rim for SSM / SlicerSALT. After all 10 are placed, generate a closed curve for Step 1.&lt;/p&gt;</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QFormLayout" name="formLayoutLandmarks">
+        <item row="0" column="0">
+         <widget class="QLabel" name="labelLandmarkNode">
+          <property name="text">
+           <string>Landmark Node:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <layout class="QHBoxLayout" name="landmarkNodeRowLayout">
+          <property name="leftMargin"><number>0</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="qMRMLNodeComboBox" name="landmarkNodeSelector" native="true">
+            <property name="toolTip">
+             <string>Fiducial node holding the L1–L10 rim landmarks for the active side</string>
+            </property>
+            <property name="nodeTypes" stdset="0">
+             <stringlist notr="true">
+              <string>vtkMRMLMarkupsFiducialNode</string>
+             </stringlist>
+            </property>
+            <property name="showChildNodeTypes" stdset="0">
+             <bool>false</bool>
+            </property>
+            <property name="addEnabled" stdset="0">
+             <bool>false</bool>
+            </property>
+            <property name="removeEnabled" stdset="0">
+             <bool>true</bool>
+            </property>
+            <property name="noneEnabled" stdset="0">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="newLandmarkNodeButton">
+            <property name="toolTip">
+             <string>Create a new landmark node for the active side and start guided placement</string>
+            </property>
+            <property name="text">
+             <string>New</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="landmarkProgressLabel">
+        <property name="text">
+         <string>0 / 10 placed</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QFrame" name="landmarkDescriptionFrame">
+        <property name="frameShape">
+         <enum>QFrame::StyledPanel</enum>
+        </property>
+        <layout class="QVBoxLayout" name="landmarkDescriptionLayout">
+         <item>
+          <widget class="QLabel" name="landmarkCurrentLabel">
+           <property name="text">
+            <string>—</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="landmarkNavLayout">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QPushButton" name="landmarkPrevButton">
+          <property name="enabled"><bool>false</bool></property>
+          <property name="toolTip">
+           <string>Remove the last placed landmark and go back one step</string>
+          </property>
+          <property name="text">
+           <string>◄ Back</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="landmarkStartButton">
+          <property name="enabled"><bool>false</bool></property>
+          <property name="toolTip">
+           <string>Activate placement mode for the current landmark. Placement advances automatically after each point.</string>
+          </property>
+          <property name="text">
+           <string>▶ Place / Resume</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QPushButton" name="curveFromLandmarksButton">
+        <property name="enabled"><bool>false</bool></property>
+        <property name="toolTip">
+         <string>Create a ClosedCurve node (L1→L10→L1) for use in Step 1 (Create Orbital Entry Plane)</string>
+        </property>
+        <property name="text">
+         <string>Create Curve from Landmarks → Step 1</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
    <item> <!-- Collapsible Orbital Surface -->
     <!--<widget class="QToolBox" name="stepsToolbox">
      <property name="currentIndex">
@@ -1555,6 +1698,16 @@
      <x>350</x>
      <y>550</y>
     </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitalVolumeWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>landmarkNodeSelector</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel"><x>350</x><y>20</y></hint>
+    <hint type="destinationlabel"><x>350</x><y>650</y></hint>
    </hints>
   </connection>
   <connection>

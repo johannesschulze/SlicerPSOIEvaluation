@@ -385,6 +385,7 @@ def hideAllVolumeRenderingNodes() -> None:
     Hide all Volume Renderings in the scene
     """
     for node in slicer.util.getNodesByClass("vtkMRMLVolumeRenderingDisplayNode"):
+        node.SetVisibility(False)
         node.SetVisibility3D(False)
 
 def showVolumeRendering(
@@ -417,6 +418,7 @@ def showVolumeRendering(
 
     # Show volume rendering
     displayNode.SetVisibility(True)
+    displayNode.SetVisibility3D(True)
 
     return displayNode
 
