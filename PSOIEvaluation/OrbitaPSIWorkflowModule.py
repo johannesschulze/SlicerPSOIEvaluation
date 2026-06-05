@@ -502,7 +502,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     def alignPlanToPreop(self):
         # remove existing nodes from the scene
         helperfunctions.removeNodesFromSceneByName([
-            "registration planned to preop"
+            "registration plan to preop"
         ])
 
         # convert the preop segmentation to a model
@@ -522,7 +522,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # register the planned model to the preop model using the ModelRegistration-Module
         import ModelRegistration
         sourceToTargetTransform = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLinearTransformNode")
-        sourceToTargetTransform.SetName("registration planned to preop")
+        sourceToTargetTransform.SetName("registration plan to preop")
         mrLogic = ModelRegistration.ModelRegistrationLogic()
         mrLogic.run(self.getParameterNode().skullPlannedModel, preopModel, sourceToTargetTransform)
         self.getParameterNode().rmsPlanToPreop = mrLogic.ComputeMeanDistance(self.getParameterNode().skullPlannedModel, preopModel, sourceToTargetTransform)
@@ -534,7 +534,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         return
 
-    # applies the regisrtation transform (planned to preop) for the selected psi
+    # applies the regisrtation transform (plan to preop) for the selected psi
     def applyTransformsToPlannendModel(self):
         pn = self.getParameterNode()
         psiPlannedModel = pn.psiPlannedModel
@@ -545,14 +545,14 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             psiPlannedModel.SetAndObserveTransformNodeID(registrationPlanToPreopManual.GetID())
             psiPlannedModel.HardenTransform()
         except Exception as e:
-            print("No manual registration from planne to preop found. Skipping.", file=sys.stderr)
+            print("No manual registration from plan to preop found. Skipping.", file=sys.stderr)
 
         try:
             registrationPlanToPreop = slicer.util.getNode("registration plan to preop")
             psiPlannedModel.SetAndObserveTransformNodeID(registrationPlanToPreop.GetID())
             psiPlannedModel.HardenTransform()
         except Exception as e:
-            print("No computed registration from planne to preop found. Skipping.", file=sys.stderr)
+            print("No computed registration from plan to preop found. Skipping.", file=sys.stderr)
 
     # prepares the scene for the segmentation of the intraoperative situation of the selected psi
     def prepareSegmentation(self):
