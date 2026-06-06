@@ -268,7 +268,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
     def onApplyTransformsToPlannedModelButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
             # Compute output
-            self.logic.applyTransformsToPlannendModel()
+            self.logic.applyTransformsToPlannedModel()
 
     def onPrepareSegmentationButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
@@ -535,7 +535,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         return
 
     # applies the regisrtation transform (plan to preop) for the selected psi
-    def applyTransformsToPlannendModel(self):
+    def applyTransformsToPlannedModel(self):
         pn = self.getParameterNode()
         psiPlannedModel = pn.psiPlannedModel
         psiPlannedModel.SetDisplayVisibility(True)
