@@ -21,11 +21,24 @@ vorhanden ist. Dann wird die .mrml-Szenendatei geladen und folgendes gemacht:
 Am Ende: CSV-Dateien aus ALLEN Fallordnern (output_*.csv) einsammeln,
 Fall-ID (= Ordnername) als erste Spalte einfügen, in Gesamtdatei schreiben.
 
-Ausführung in der Slicer Python Console:
+Ausführung
+----------
+Slicer Python Console (exec):
     exec(open('/path/to/correct_plan_to_preop_cases.py').read())
 
-Oder als Slicer-Skript (headless):
-    Slicer --no-main-window --python-script /path/to/correct_plan_to_preop_cases.py
+Headless, Batch-Modus (alle korrekturbedürftigen Fälle):
+    Slicer --no-main-window --python-script correct_plan_to_preop_cases.py
+
+Headless, Batch-Modus, Dry Run:
+    Slicer --no-main-window --python-script correct_plan_to_preop_cases.py -- --dry-run
+
+Headless, Einzelfall:
+    Slicer --no-main-window --python-script correct_plan_to_preop_cases.py -- /path/to/cases/077
+
+Headless, Einzelfall, Dry Run:
+    Slicer --no-main-window --python-script correct_plan_to_preop_cases.py -- --dry-run /path/to/cases/077
+
+Hinweis: Das `--` trennt Slicer-eigene Flags von den Skript-Argumenten.
 """
 
 import sys
