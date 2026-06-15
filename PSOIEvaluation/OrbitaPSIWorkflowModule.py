@@ -860,7 +860,6 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         segmentationPostop	= helperfunctions.convertModelToSegmentation(nodePostop)
         diceAndHausdorff	= helperfunctions.getDiceAndHausdorff(segmentationPlanned, segmentationPostop)
         
-        resultsTableRow['registration_ncc'] = self.getParameterNode().nccRegistration
         resultsTableRow[f'{prefix}_rms_plan_to_preop'] = self.getParameterNode().rmsPlanToPreop
         resultsTableRow[f'{prefix}_rms_plan_to_postop'] = self.getParameterNode().rmsPlanToPostop
 
@@ -901,6 +900,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # Results of Model-To-Model-Distance
         distanceArrayTotal	=	slicer.util.arrayFromModelPointData(nodeDistance, "point to point distance signed")
         resultsTableRow[f'{prefix}_m2m_rms'] = np.sqrt(np.mean(np.square(distanceArrayTotal)))
+        resultsTableRow['registration_ncc'] = self.getParameterNode().nccRegistration
         
         for key, value in resultsTableRow.items():
             print(f"{key[0:30]: <30}: {value:.3f}") 
