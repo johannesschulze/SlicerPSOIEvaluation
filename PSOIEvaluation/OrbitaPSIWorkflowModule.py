@@ -28,7 +28,7 @@ from slicer.parameterNodeWrapper import (
     WithinRange,
 )
 
-from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode, vtkMRMLNode 
+from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode, vtkMRMLNode, vtkMRMLSegmentationNode
 
 class OrbitaPSIWorkflowModule(ScriptedLoadableModule):
     """Uses ScriptedLoadableModule base class, available at:
@@ -76,6 +76,9 @@ class OrbitaPSIWorkflowModuleParameterNode:
 
     rmsPlanToPreop : float
     rmsPlanToPostop : float
+    nccRegistration : float = 0.0
+
+    registrationMaskSegmentation : Optional[vtkMRMLSegmentationNode]
 
     step : int = 0
 
@@ -92,6 +95,8 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self.logic = None
         self._parameterNode = None
         self._parameterNodeGuiTag = None
+        self._brainsCliNode = None
+        self._brainsObserverTag = None
 
     def setup(self) -> None:
         """Called when the user opens the module the first time and the widget is initialized."""
@@ -119,6 +124,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
 
         # Buttons
         self.ui.prepareSceneButton.connect("clicked(bool)", self.onPrepareSceneButton)
+        self.ui.drawRegistrationMaskButton.connect("clicked(bool)", self.onDrawRegistrationMaskButton)
         self.ui.performVolumeRegistrationButton.connect("clicked(bool)", self.onPerformVolumeRegistrationButton)
         self.ui.applyTransformsToPlannedModelButton.connect("clicked(bool)", self.onApplyTransformsToPlannedModelButton)
         self.ui.prepareSegmentationButton.connect("clicked(bool)", self.onPrepareSegmentationButton)
@@ -239,14 +245,41 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             )
             self._nextStep()
 
+    def onDrawRegistrationMaskButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to open registration mask editor."), waitCursor=True):
+            self.logic.openRegistrationMaskEditor(
+                self.ui.preopVolumeSelector.currentNode()
+            )
+
     def onPerformVolumeRegistrationButton(self) -> None:
-        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
-            self.logic.performVolumeRegistration(
+        with slicer.util.tryWithErrorDisplay(_("Failed to start registration."), waitCursor=True):
+            self.ui.performVolumeRegistrationButton.enabled = False
+            self.ui.performVolumeRegistrationButton.text = "Registrierung läuft..."
+            self.ui.brainsProgressBar.setVisible(True)
+            cliNode = self.logic.performVolumeRegistration(
                 self.ui.preopVolumeSelector.currentNode(),
                 self.ui.postopVolumeSelector.currentNode()
             )
+            self._brainsObserverTag = cliNode.AddObserver("ModifiedEvent", self._onBrainsRegistrationModified)
+            self._brainsCliNode = cliNode
+
+    def _onBrainsRegistrationModified(self, cliNode, event) -> None:
+        if cliNode.IsBusy():
+            return
+        cliNode.RemoveObserver(self._brainsObserverTag)
+        self._brainsCliNode = None
+        self.ui.performVolumeRegistrationButton.enabled = True
+        self.ui.performVolumeRegistrationButton.text = "2b. Register CT-Scans (BRAINS)"
+        self.ui.brainsProgressBar.setVisible(False)
+        if cliNode.GetStatus() == slicer.vtkMRMLCommandLineModuleNode.Completed:
+            ncc = self.logic.computeRegistrationNCC(
+                self._parameterNode.preopVolume,
+                self._parameterNode.postopVolume
+            )
+            print(f"Registration NCC: {ncc:.4f}")
             self._nextStep()
+        else:
+            slicer.util.errorDisplay("Registrierung fehlgeschlagen. Bitte Konsolenausgabe prüfen.")
 
     def onRecenterPlanSTLsButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to recenter Planning Data."), waitCursor=True):
@@ -381,12 +414,59 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         
         return
     
+    def computeRegistrationNCC(self, preopVolume, postopVolume):
+        transformNode = slicer.util.getNode("registration postop to preop")
+
+        # Resample postop into preop space using the BRAINS result transform
+        resampledNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+        params = {
+            "inputVolume": postopVolume.GetID(),
+            "referenceVolume": preopVolume.GetID(),
+            "outputVolume": resampledNode.GetID(),
+            "transformationFile": transformNode.GetID(),
+        }
+        slicer.cli.run(slicer.modules.resamplescalarvectordwivolume, None, params, wait_for_completion=True)
+
+        # NCC over non-background voxels (air in CT is typically < -900 HU)
+        a = slicer.util.arrayFromVolume(preopVolume).flatten().astype(np.float64)
+        b = slicer.util.arrayFromVolume(resampledNode).flatten().astype(np.float64)
+        mask = (a > -900) & (b > -900)
+        a, b = a[mask], b[mask]
+        ncc = float(np.mean(((a - a.mean()) / a.std()) * ((b - b.mean()) / b.std())))
+
+        slicer.mrmlScene.RemoveNode(resampledNode)
+        self.getParameterNode().nccRegistration = ncc
+        return ncc
+
+    def openRegistrationMaskEditor(self, preopVolume):
+        pn = self.getParameterNode()
+
+        # Create a new segmentation node if none exists yet
+        maskSegNode = pn.registrationMaskSegmentation
+        if maskSegNode is None:
+            maskSegNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+            maskSegNode.SetName("registration mask")
+            maskSegNode.GetSegmentation().AddEmptySegment("mask")
+            pn.registrationMaskSegmentation = maskSegNode
+
+        # Switch to Segment Editor
+        slicer.util.selectModule("SegmentEditor")
+        editor = slicer.modules.SegmentEditorWidget.editor
+        editor.setSegmentationNode(maskSegNode)
+        editor.setSourceVolumeNode(preopVolume)
+
+        # Activate Scissors in FillInside mode
+        editor.setActiveEffectByName("Scissors")
+        effect = editor.activeEffect()
+        if effect:
+            effect.setParameter("Operation", "FillInside")
+            effect.setParameter("Shape", "FreeForm")
+
     def performVolumeRegistration(self, preopVolume, postopVolume):
-        
+        pn = self.getParameterNode()
+
         slicer.util.getNode("manual registration postop to intraop").GetDisplayNode().SetEditorVisibility(False)
 
-        # Create new nodes for output
-        transformedMovingVolumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
         transformNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTransformNode")
         transformNode.SetName("registration postop to preop")
 
@@ -400,9 +480,13 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         parameters["useRigid"] = True  # options include: "useRigid", "useAffine", "useBSpline"
         parameters["initializeTransformMode"] = "Off"
         parameters["samplingPercentage"] = 0.002
-        cliBrainsFitRigidNode = slicer.cli.run(slicer.modules.brainsfit, None, parameters, wait_for_completion=True)
 
-        return
+        maskSegNode = pn.registrationMaskSegmentation
+        if maskSegNode is not None and maskSegNode.GetSegmentation().GetNumberOfSegments() > 0:
+            parameters["fixedBinaryVolume"] = maskSegNode.GetID()
+            parameters["maskProcessingMode"] = "ROI"
+
+        return slicer.cli.run(slicer.modules.brainsfit, None, parameters, wait_for_completion=False)
     
     def recenterPlannningSTLs(self):
         skullPlannedModel = self.getParameterNode().skullPlannedModel
@@ -776,6 +860,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         segmentationPostop	= helperfunctions.convertModelToSegmentation(nodePostop)
         diceAndHausdorff	= helperfunctions.getDiceAndHausdorff(segmentationPlanned, segmentationPostop)
         
+        resultsTableRow['registration_ncc'] = self.getParameterNode().nccRegistration
         resultsTableRow[f'{prefix}_rms_plan_to_preop'] = self.getParameterNode().rmsPlanToPreop
         resultsTableRow[f'{prefix}_rms_plan_to_postop'] = self.getParameterNode().rmsPlanToPostop
 
