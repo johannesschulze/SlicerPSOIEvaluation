@@ -37,7 +37,7 @@ class GeneralPSOIWorkflowModule(ScriptedLoadableModule):
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("GeneralPSOIWorkflowModule")  # TODO: make this more human readable by adding spaces
+        self.parent.title = _("General PSOI Analysis Workflow")
         # TODO: set categories (folders where the module shows up in the module selector)
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "PSOI Evaluation")]
         self.parent.dependencies = ['SegmentStatistics','ModelRegistration'] 
@@ -714,7 +714,10 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     def performVolumeRegistration(self, preopVolume, postopVolume):
         pn = self.getParameterNode()
 
-        slicer.util.getNode("manual registration postop to preop").GetDisplayNode().SetEditorVisibility(False)
+        try:
+            slicer.util.getNode("manual registration postop to preop").GetDisplayNode().SetEditorVisibility(False)
+        except Exception:
+            pass
 
         transformNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTransformNode")
         transformNode.SetName("registration postop to preop")
