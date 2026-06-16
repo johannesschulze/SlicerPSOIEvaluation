@@ -30,14 +30,14 @@ from slicer.parameterNodeWrapper import (
 
 from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode, vtkMRMLNode, vtkMRMLSegmentationNode, vtkMRMLTransformNode
 
-class OrbitaPSIWorkflowModule(ScriptedLoadableModule):
+class GeneralPSOIWorkflowModule(ScriptedLoadableModule):
     """Uses ScriptedLoadableModule base class, available at:
     https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
     """
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("OrbitaPSIWorkflowModule")  # TODO: make this more human readable by adding spaces
+        self.parent.title = _("GeneralPSOIWorkflowModule")  # TODO: make this more human readable by adding spaces
         # TODO: set categories (folders where the module shows up in the module selector)
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "PSOI Evaluation")]
         self.parent.dependencies = ['SegmentStatistics','ModelRegistration'] 
@@ -58,7 +58,7 @@ This file was originally developed by Johannes Schulze (Bundeswehrkrankenhaus Ul
         return
 
 @parameterNodeWrapper
-class OrbitaPSIWorkflowModuleParameterNode:
+class GeneralPSOIWorkflowModuleParameterNode:
     """
     The parameters needed by module.
     
@@ -86,7 +86,7 @@ class OrbitaPSIWorkflowModuleParameterNode:
     step : int = 0
 
     
-class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
+class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     """Uses ScriptedLoadableModuleWidget base class, available at:
     https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
     """
@@ -109,7 +109,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
 
         # Load widget from .ui file (created by Qt Designer).
         # Additional widgets can be instantiated manually and added to self.layout.
-        uiWidget = slicer.util.loadUI(self.resourcePath("UI/OrbitaPSIWorkflowModule.ui"))
+        uiWidget = slicer.util.loadUI(self.resourcePath("UI/GeneralPSOIWorkflowModule.ui"))
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
 
@@ -120,7 +120,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
 
         # Create logic class. Logic implements all computations that should be possible to run
         # in batch mode, without a graphical user interface.
-        self.logic = OrbitaPSIWorkflowModuleLogic()
+        self.logic = GeneralPSOIWorkflowModuleLogic()
 
         # Connections
         # These connections ensure that we update parameter node when scene is closed
@@ -223,7 +223,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         #     if firstVolumeNode:
         #         self._parameterNode.inputVolume = firstVolumeNode
     
-    def setParameterNode(self, inputParameterNode: Optional[OrbitaPSIWorkflowModuleParameterNode]) -> None:
+    def setParameterNode(self, inputParameterNode: Optional[GeneralPSOIWorkflowModuleParameterNode]) -> None:
         """
         Set and observe parameter node.
         Observation is needed because when the parameter node is changed then the GUI must be updated immediately.
@@ -478,7 +478,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         #self.logic.getParameterNode().step = self.ui.stepsToolbox.currentIndex
 
     def onReload(self):
-        logging.info("Reloading OrbitaPSIWorkflowModule")
+        logging.info("Reloading GeneralPSOIWorkflowModule")
         importlib.reload(mod)
         for submoduleName in __submoduleNames__:
             mod1 = importlib.import_module('.'.join(['PSOILib',submoduleName]), __name__)
@@ -488,7 +488,7 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
              ScriptedLoadableModuleWidget.onReload(self)
 
     
-class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
+class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     """This class should implement all the actual
     computation done by your module.  The interface
     should be such that other python code can import
@@ -503,7 +503,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         ScriptedLoadableModuleLogic.__init__(self)
 
     def getParameterNode(self):
-        return OrbitaPSIWorkflowModuleParameterNode(super().getParameterNode())
+        return GeneralPSOIWorkflowModuleParameterNode(super().getParameterNode())
 
     def createCropROI(self, volume):
         bounds = [0.0] * 6

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>OrbitaPSIWorkflowModule</class>
- <widget class="qMRMLWidget" name="OrbitaPSIWorkflowModule">
+ <class>GeneralPSOIWorkflowModule</class>
+ <widget class="qMRMLWidget" name="GeneralPSOIWorkflowModule">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -979,7 +979,7 @@ QToolBox::tab:selected {
  <resources/>
  <connections>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>preopVolumeSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -995,7 +995,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>postopVolumeSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1011,7 +1011,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>skullPlannedModelSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1027,7 +1027,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>registrationMaskSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1043,7 +1043,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiPlannedModelSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1059,7 +1059,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiPlannedModelSelectorCalculation</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1075,7 +1075,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiPostopModelSelectorCalculation</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1091,7 +1091,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiPlannedModelSelectorOutput</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1107,7 +1107,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiPostopModelSelectorOutput</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1123,7 +1123,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiDistanceModelSelectorOutput</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1139,7 +1139,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiPostopSegmentationSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
@@ -1155,7 +1155,7 @@ QToolBox::tab:selected {
    </hints>
   </connection>
   <connection>
-   <sender>OrbitaPSIWorkflowModule</sender>
+   <sender>GeneralPSOIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>preopModelSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
