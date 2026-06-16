@@ -128,6 +128,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
         # Buttons
+        self.ui.openDocumentationButton.connect("clicked(bool)", self.onOpenDocumentationButton)
         self.ui.cropPreopButton.connect("clicked(bool)", self.onCropPreopButton)
         self.ui.applyCropPreopButton.connect("clicked(bool)", self.onApplyCropPreopButton)
         self.ui.cropPostopButton.connect("clicked(bool)", self.onCropPostopButton)
@@ -476,6 +477,10 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
             self.ui.stepsToolbox.setCurrentIndex(self.ui.stepsToolbox.currentIndex+1)
         
         #self.logic.getParameterNode().step = self.ui.stepsToolbox.currentIndex
+
+    def onOpenDocumentationButton(self) -> None:
+        docPath = self.resourcePath("Docs/GeneralPSOIWorkflowModule/psi_analysis_workflow_EN.html")
+        qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(docPath))
 
     def onReload(self):
         logging.info("Reloading GeneralPSOIWorkflowModule")

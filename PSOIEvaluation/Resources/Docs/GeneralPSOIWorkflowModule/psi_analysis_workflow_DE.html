@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en" class="h-100" data-bs-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="generator" content="pandoc">
+    <meta name="author" content="Johannes Schulze">
+    
+    <title>PSI Analysis Workflow</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    
+    <!-- Bootstrap Icon -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" integrity="sha384-tViUnnbYAV00FLIhhi3v/dWt3Jxw4gZQcNoSCxCIFNJVCx7/D55/wXsrNIRANwdD" crossorigin="anonymous">
+    
+    <!-- Highlight.js Styles -->
+    <link rel="stylesheet" id="highlight-style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/stackoverflow-light.min.css">
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="https://ashki23.github.io/docs.css">
+    <link rel="stylesheet" href="../styles.css">
+    
+    <!-- After header contents -->
+        <!-- Add favicon here -->
+        <!-- Add site-verifications here -->
+      </head>
+  <body class="d-flex flex-column h-100" data-bs-spy="scroll" data-bs-target="#TableOfContents">
+    <!-- Before body contents -->
+        <nav class="navbar bd-navbar navbar-expand-lg fixed-top">
+          <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap">
+            <!-- Brand -->
+            <a class="navbar-brand" href="#">General PSOI Analysis Workflow Module</a>
+
+            <!-- Toggler -->
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+              <i class="bi bi-list fs-1"></i>
+            </button>
+
+            <!-- Navbar Content -->
+            <div class="collapse navbar-collapse scrollable-navbar" id="navbarNav">
+              <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        		<!--
+                <li class="nav-item">
+                  <a class="nav-link active" aria-current="page" href="#">Home</a>
+                </li>
+        		-->
+              </ul>
+
+              <!-- Divider for larger screens -->
+              <div class="vr d-none d-lg-flex mx-2 my-1 nav-line"></div>
+
+              <!-- Divider for smaller screens -->
+              <hr class="d-lg-none nav-line">
+
+              <!-- Theme Dropdown -->
+              <ul class="navbar-nav">
+                <li class="nav-item dropdown">
+                  <button class="btn btn-link nav-link dropdown-toggle" type="button" id="themeDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-circle-half"></i>
+        	    <span class="d-lg-none ms-2">Toggle theme</span>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="themeDropdown">
+                    <li>
+                      <a class="dropdown-item align-items-center" data-theme="light">
+                        <i class="bi bi-sun-fill me-2 opacity-50"></i> Light
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item align-items-center" data-theme="dark">
+                        <i class="bi bi-moon-stars-fill me-2 opacity-50"></i> Dark
+                      </a>
+                    </li>
+                  </ul>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </nav>
+        
+    <div class="container-xxl bd-gutter bd-layout mb-5">
+      <main class="bd-main order-1">
+	
+	<!-- Tiltle -->
+	<h1 class="bd-intro ps-lg-2 pt-2" id="title">PSI Analysis Workflow</h1>
+	
+		<!-- Table of Contents -->
+	<div class="bd-toc mt-lg-0 mb-lg-5 mt-3 mb-5 px-sm-1 text-body-secondary">
+	  <strong class="d-md-block d-none h6 my-2 ms-3">On this page</strong>
+	  <hr class="d-md-block d-none my-2 ms-3">
+	  <div class="collapse bd-toc-collapse" id="tocContents">
+	    <nav id="TableOfContents">
+	      <ul>
+      <li><a href="#voraussetzungen"
+      id="toc-voraussetzungen">Voraussetzungen</a></li>
+      <li><a href="#überblick" id="toc-überblick">Überblick</a></li>
+      <li><a href="#schritt-0-daten-laden-und-namensgebung"
+      id="toc-schritt-0-daten-laden-und-namensgebung">Schritt 0: Daten
+      laden und Namensgebung</a>
+      <ul>
+      <li><a href="#daten-in-3d-slicer-importieren"
+      id="toc-daten-in-3d-slicer-importieren">Daten in 3D Slicer
+      importieren</a></li>
+      <li><a href="#namenskonvention"
+      id="toc-namenskonvention">Namenskonvention</a></li>
+      </ul></li>
+      <li><a href="#schritt-1-vorbereitung-der-szene"
+      id="toc-schritt-1-vorbereitung-der-szene">Schritt 1: Vorbereitung
+      der Szene</a>
+      <ul>
+      <li><a href="#eingaben-auswählen"
+      id="toc-eingaben-auswählen">Eingaben auswählen</a></li>
+      <li><a href="#optional-volumes-zuschneiden"
+      id="toc-optional-volumes-zuschneiden">Optional: Volumes
+      zuschneiden</a></li>
+      <li><a href="#optional-midsagittal-ausrichtung"
+      id="toc-optional-midsagittal-ausrichtung">Optional:
+      Midsagittal-Ausrichtung</a></li>
+      <li><a href="#szene-vorbereiten" id="toc-szene-vorbereiten">Szene
+      vorbereiten</a></li>
+      </ul></li>
+      <li><a href="#schritt-2-registrierung-der-ct-scans"
+      id="toc-schritt-2-registrierung-der-ct-scans">Schritt 2:
+      Registrierung der CT-Scans</a>
+      <ul>
+      <li><a href="#manuelle-vorausrichtung"
+      id="toc-manuelle-vorausrichtung">Manuelle Vorausrichtung</a></li>
+      <li><a href="#optional-registrierungsmaske"
+      id="toc-optional-registrierungsmaske">Optional:
+      Registrierungsmaske</a></li>
+      <li><a href="#automatische-registrierung"
+      id="toc-automatische-registrierung">Automatische
+      Registrierung</a></li>
+      </ul></li>
+      <li><a
+      href="#schritt-2.a-optional-planungs-stl-ins-präoperative-ct-registrieren"
+      id="toc-schritt-2.a-optional-planungs-stl-ins-präoperative-ct-registrieren">Schritt
+      2.a (Optional): Planungs-STL ins präoperative CT registrieren</a>
+      <ul>
+      <li><a href="#planungs-stls-vorausrichten"
+      id="toc-planungs-stls-vorausrichten">1. Planungs-STLs
+      vorausrichten</a></li>
+      <li><a href="#präoperatives-ct-segmentieren"
+      id="toc-präoperatives-ct-segmentieren">2. Präoperatives CT
+      segmentieren</a></li>
+      <li><a href="#planungs-stl-registrieren"
+      id="toc-planungs-stl-registrieren">3. Planungs-STL
+      registrieren</a></li>
+      </ul></li>
+      <li><a href="#schritt-3-segmentierung-des-intraoperativen-psi"
+      id="toc-schritt-3-segmentierung-des-intraoperativen-psi">Schritt
+      3: Segmentierung des intraoperativen PSI</a>
+      <ul>
+      <li><a href="#psi-modell-auswählen"
+      id="toc-psi-modell-auswählen">PSI-Modell auswählen</a></li>
+      <li><a
+      href="#optional-planungs-stl-in-das-präop-koordinatensystem-übertragen"
+      id="toc-optional-planungs-stl-in-das-präop-koordinatensystem-übertragen">Optional:
+      Planungs-STL in das Präop-Koordinatensystem übertragen</a></li>
+      <li><a href="#psi-segmentieren" id="toc-psi-segmentieren">PSI
+      segmentieren</a></li>
+      <li><a href="#bestehende-segmentierung-verwenden"
+      id="toc-bestehende-segmentierung-verwenden">Bestehende
+      Segmentierung verwenden</a></li>
+      </ul></li>
+      <li><a href="#schritt-4-psis-überlagern"
+      id="toc-schritt-4-psis-überlagern">Schritt 4: PSIs überlagern</a>
+      <ul>
+      <li><a href="#automatische-registrierung-1"
+      id="toc-automatische-registrierung-1">Automatische
+      Registrierung</a></li>
+      <li><a href="#manuelle-ausrichtung-ohne-segmentierung"
+      id="toc-manuelle-ausrichtung-ohne-segmentierung">Manuelle
+      Ausrichtung (ohne Segmentierung)</a></li>
+      </ul></li>
+      <li><a href="#schritt-5-abstandsanalyse"
+      id="toc-schritt-5-abstandsanalyse">Schritt 5:
+      Abstandsanalyse</a></li>
+      <li><a href="#schritt-6-ergebnisausgabe"
+      id="toc-schritt-6-ergebnisausgabe">Schritt 6: Ergebnisausgabe</a>
+      <ul>
+      <li><a href="#ausgabewerte"
+      id="toc-ausgabewerte">Ausgabewerte</a></li>
+      </ul></li>
+      <li><a href="#tipps-und-hinweise"
+      id="toc-tipps-und-hinweise">Tipps und Hinweise</a></li>
+      <li><a href="#fehlersuche"
+      id="toc-fehlersuche">Fehlersuche</a></li>
+      </ul>
+	    </nav>
+	  </div>
+	</div>
+		
+	<!-- Main Content -->
+	<div class="bd-content ps-lg-2">
+	  <p><strong>Modul:</strong> GeneralPSOIWorkflowModule<br />
+  <strong>Zweck:</strong> Evaluierung der dreidimensionalen Position
+  patientenspezifischer Implantate (PSI) im Vergleich zur präoperativen
+  Planung<br />
+  <strong>Zielgruppe:</strong> Klinisches Personal und Forscher im
+  Bereich der PSI-Chirurgie</p>
+  <hr />
+  <h1 id="voraussetzungen">Voraussetzungen</h1>
+  <ul>
+  <li>3D Slicer (Version 5.0 oder neuer)</li>
+  <li>Die Erweiterung <strong>SlicerPSOIEvaluation</strong> muss über
+  den Extension Manager oder manuell geladen sein</li>
+  <li>Weitere benötigte Erweiterungen:
+  <ul>
+  <li><strong>ModelToModelDistance</strong></li>
+  <li><strong>SlicerIGT</strong></li>
+  <li><strong>SlicerRT</strong></li>
+  <li><strong>ModelRegistration</strong> (im Extension Manager als
+  „SlicerModelRegistration” gelistet)</li>
+  </ul></li>
+  <li>CT-Datensätze in HU-kalibrierten Einheiten (DICOM oder NIfTI):
+  präoperatives CT + postoperatives CT bzw. C-Bogen-Aufnahme</li>
+  <li>STL-Datei des geplanten PSI (obligatorisch)</li>
+  <li>STL-Datei des geplanten Schädels / Mittelgesichts (optional;
+  erforderlich wenn das PSI-STL in einem eigenen Koordinatensystem
+  geliefert wird, das nicht mit dem des Planungs-CTs übereinstimmt)</li>
+  </ul>
+  <hr />
+  <h1 id="überblick">Überblick</h1>
+  <p>Das Modul führt den Anwender in sechs aufeinanderfolgenden
+  Schritten (Tabs) durch die vollständige Auswertung:</p>
+  <table>
+  <colgroup>
+  <col style="width: 50%" />
+  <col style="width: 50%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Schritt</th>
+  <th>Aufgabe</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>1. Prepare the Scene</strong></td>
+  <td>Volumen- und Modellauswahl, Szenenvorbereitung, grobe
+  Vorausrichtung</td>
+  </tr>
+  <tr>
+  <td><strong>2. Register preop and postop CTs</strong></td>
+  <td>Manuelle Feinjustierung und automatische Intensitäts-basierte
+  CT-Registrierung (BRAINS)</td>
+  </tr>
+  <tr>
+  <td><strong>2.a (Optional) Register plan to preop CT</strong></td>
+  <td>Registrierung der Planungs-STLs ins präoperative
+  CT-Koordinatensystem</td>
+  </tr>
+  <tr>
+  <td><strong>3. Segment intraop PSI</strong></td>
+  <td>Segmentierung des PSI aus dem postoperativen CT</td>
+  </tr>
+  <tr>
+  <td><strong>4. Align PSIs</strong></td>
+  <td>Registrierung des Planungs-STL auf die postoperative
+  PSI-Position</td>
+  </tr>
+  <tr>
+  <td><strong>5. Calculate Comparison</strong></td>
+  <td>Punkt-zu-Punkt-Abstandsanalyse</td>
+  </tr>
+  <tr>
+  <td><strong>6. Output Results</strong></td>
+  <td>Berechnung und Export aller Kenngrößen als CSV-Datei</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>Die Schritte 2.a und Teile von Schritt 3 sind situationsabhängig
+  optional.</p>
+  <hr />
+  <h1 id="schritt-0-daten-laden-und-namensgebung">Schritt 0: Daten laden
+  und Namensgebung</h1>
+  <h2 id="daten-in-3d-slicer-importieren">Daten in 3D Slicer
+  importieren</h2>
+  <p><strong>STL-Dateien:</strong> Per Drag &amp; Drop in das
+  Slicer-Fenster ziehen.</p>
+  <p><strong>DICOM-Datensätze:</strong> Per Drag &amp; Drop in Slicer
+  ziehen und im anschließenden Dialog <em>Load directory into DICOM
+  database</em> bestätigen. Anschließend die DICOM-Datenbank öffnen und
+  den gewünschten Fall durch Doppelklick laden. Etwaige Warnungen können
+  bestätigt werden.</p>
+  <h2 id="namenskonvention">Namenskonvention</h2>
+  <p>Für Übersichtlichkeit sollten die importierten Datensätze
+  einheitlich benannt werden (Doppelklick auf den Namen in der
+  Datenliste oder F2):</p>
+  <table>
+  <colgroup>
+  <col style="width: 39%" />
+  <col style="width: 60%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Datensatz</th>
+  <th>Empfohlener Name</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td>STL-Datei des geplanten PSI</td>
+  <td><code>PSI planned</code></td>
+  </tr>
+  <tr>
+  <td>STL-Datei des Schädels / Mittelgesichts (falls vorhanden)</td>
+  <td><code>Skull planned</code></td>
+  </tr>
+  <tr>
+  <td>Präoperativer CT-Datensatz</td>
+  <td><code>preop volume</code></td>
+  </tr>
+  <tr>
+  <td>Postoperativer CT / C-Bogen-Datensatz</td>
+  <td><code>postop volume</code></td>
+  </tr>
+  </tbody>
+  </table>
+  <blockquote>
+  <p><strong>Hinweis:</strong> Das Modul vergibt die Namen für Prä- und
+  Postop-Volumen beim Klick auf <em>Prepare Scene</em> automatisch. Die
+  Umbenennung ist dennoch empfehlenswert, um im Auswahlschritt die
+  richtigen Datensätze leicht identifizieren zu können.</p>
+  </blockquote>
+  <p>Das Modul öffnen: Entweder über STRG+F (<em>Module Finder</em>)
+  nach „General PSOI” suchen oder im Modulmenü unter <em>PSOI Evaluation
+  → General PSOI Analysis Workflow</em> navigieren.</p>
+  <p><img src="Screenshots/00_startup_and_volume_selection.png" /></p>
+  <hr />
+  <h1 id="schritt-1-vorbereitung-der-szene">Schritt 1: Vorbereitung der
+  Szene</h1>
+  <h2 id="eingaben-auswählen">Eingaben auswählen</h2>
+  <table>
+  <colgroup>
+  <col style="width: 42%" />
+  <col style="width: 57%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Feld</th>
+  <th>Inhalt</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Preop volume</strong></td>
+  <td>Präoperativer CT-Datensatz</td>
+  </tr>
+  <tr>
+  <td><strong>Postop volume</strong></td>
+  <td>Postoperativer CT / C-Bogen-Datensatz</td>
+  </tr>
+  <tr>
+  <td><strong>Skull Planned</strong></td>
+  <td>STL des geplanten Schädels (nur nötig wenn Planungs-STLs im
+  Koordinatensystem des Planungs-CTs registriert werden müssen, z.B. bei
+  ReOss)</td>
+  </tr>
+  </tbody>
+  </table>
+  <p><img src="Screenshots/01_prepare_scene.png" /></p>
+  <h2 id="optional-volumes-zuschneiden">Optional: Volumes
+  zuschneiden</h2>
+  <p>Wenn die CT-Datensätze größere Körperregionen umfassen als nötig,
+  können sie vorab zugeschnitten werden, um Rechenzeit zu sparen:</p>
+  <ol type="1">
+  <li><strong>Crop volume</strong> klicken → ein verstellbares
+  ROI-Quader erscheint in der Szene.</li>
+  <li>Quader durch Ziehen der Handles an die gewünschten Grenzen
+  anpassen.</li>
+  <li><strong>Apply crop</strong> klicken → der Datensatz wird dauerhaft
+  auf die gewählte Region beschnitten.</li>
+  </ol>
+  <p>Für Präop- und Postop-Volumen stehen jeweils eigene
+  Crop-Schaltflächen zur Verfügung.</p>
+  <h2 id="optional-midsagittal-ausrichtung">Optional:
+  Midsagittal-Ausrichtung</h2>
+  <p>Der Button <strong>1a. Align to Midline (PCA)</strong> berechnet
+  anhand der kortikalen Knochenverteilung des präoperativen CT
+  automatisch einen Yaw-Winkel, der die Midsagittalebene mit x = 0
+  ausrichtet. Der resultierende Transform wird als interaktiv
+  bearbeitbare Transformation dargestellt, sodass das Ergebnis manuell
+  feinkorrigiert werden kann.</p>
+  <blockquote>
+  <p><strong>Hinweis:</strong> Dieser Schritt ist optional und vor allem
+  dann hilfreich, wenn die Lagerung des Patienten stark geneigt ist.</p>
+  </blockquote>
+  <h2 id="szene-vorbereiten">Szene vorbereiten</h2>
+  <p>Klick auf <strong>1. Prepare Scene</strong> führt folgende Schritte
+  aus:</p>
+  <ul>
+  <li>Umbenennung der Volumina zu <code>preop volume</code> /
+  <code>postop volume</code></li>
+  <li>Anwendung der Midline-Transformation auf das präoperative CT
+  (falls vorhanden, wird diese eingebrannt)</li>
+  <li>Grobe Vorausrichtung des postoperativen Volumens auf das
+  präoperative CT (Schwerpunkt-Ausrichtung)</li>
+  <li>Aktivierung einer interaktiven Transformationsanzeige für die
+  manuelle Feinjustierung</li>
+  </ul>
+  <hr />
+  <h1 id="schritt-2-registrierung-der-ct-scans">Schritt 2: Registrierung
+  der CT-Scans</h1>
+  <h2 id="manuelle-vorausrichtung">Manuelle Vorausrichtung</h2>
+  <p>Im Rahmen der Szenenvorbereitung (Schritt 1) wurden die beiden
+  Volumina bereits grob überlagert. In diesem Schritt erfolgt eine
+  manuelle Feinjustierung, um die automatische Registrierung zu
+  erleichtern.</p>
+  <p>In den axialen, koronaren und sagittalen Schichtansichten wird das
+  postoperative Volumen mit 50 % Opazität über das präoperative
+  geblendet. Mit den Transformations-Handles kann das postoperative
+  Volumen verschoben und rotiert werden:</p>
+  <ul>
+  <li><strong>Grauer Kreis:</strong> Rotation</li>
+  <li><strong>Fadenkreuz in der Mitte:</strong> Translation</li>
+  <li><strong>ALT + Fadenkreuz verschieben:</strong> Rotationszentrum
+  versetzen</li>
+  </ul>
+  <p><strong>Empfohlener Ausrichtungsworkflow:</strong></p>
+  <ol type="1">
+  <li><strong>Sagittale Ansicht (gelb):</strong> Vertikale und sagittale
+  Position einstellen. Orientierungspunkte: Stirnhöhle, Keilbeinhöhle,
+  Sella turcica, Hartgaumen.</li>
+  <li><strong>Koronare Ansicht (grün):</strong> Transversale Ausrichtung
+  korrigieren. Geeigneter Orientierungspunkt: Canalis infraorbitalis der
+  gesunden Seite (Rotationszentrum dort setzen, dann Rotation um die
+  Sagittalachse korrigieren).</li>
+  <li><strong>Axiale Ansicht:</strong> Jochbeinprominenz der gesunden
+  Seite überlagern, Rotationszentrum setzen und Rotation feinanpassen.
+  Nicht an der frakturierten Gegenseite orientieren.</li>
+  </ol>
+  <blockquote>
+  <p>Anschließend in allen drei Ansichten durchscrollen um die
+  Überlagerung zu überprüfen. Die Ausrichtung im Bereich von
+  Mittelgesicht und Schädelbasis sollte möglichst genau sein; im Bereich
+  der Halswirbelsäule sind Abweichungen durch unterschiedliche Lagerung
+  möglich und unkritisch.</p>
+  </blockquote>
+  <h2 id="optional-registrierungsmaske">Optional:
+  Registrierungsmaske</h2>
+  <p>Eine Segmentierungsmaske kann verwendet werden, um die
+  Registrierung auf eine bestimmte anatomische Region einzugrenzen (z.B.
+  nur die Orbita oder nur den Unterkiefer). Klick auf <strong>2a.
+  Registrierungsmaske zeichnen (optional)</strong> öffnet den Segment
+  Editor mit aktiviertem Scissors-Werkzeug. Das gezeichnete Segment wird
+  als ROI für die BRAINS-Registrierung verwendet.</p>
+  <h2 id="automatische-registrierung">Automatische Registrierung</h2>
+  <p>Klick auf <strong>2b. Register CT-Scans (BRAINS)</strong> startet
+  die rigide Intensitäts-basierte Registrierung. Je nach Rechenleistung
+  dauert dieser Schritt 1–5 Minuten. Nach Abschluss wird der Normalized
+  Cross-Correlation (NCC)-Wert der Registrierung in der Konsole
+  ausgegeben.</p>
+  <blockquote>
+  <p><strong>Ergebnis prüfen:</strong> Nach der Registrierung nochmals
+  in allen drei Ansichten durchscrollen. Die Überlagerung im Bereich des
+  Mittelgesichts und der Schädelbasis sollte nahezu perfekt sein.</p>
+  </blockquote>
+  <hr />
+  <h1
+  id="schritt-2.a-optional-planungs-stl-ins-präoperative-ct-registrieren">Schritt
+  2.a (Optional): Planungs-STL ins präoperative CT registrieren</h1>
+  <p>Dieser Schritt ist <strong>nur erforderlich</strong>, wenn die
+  STL-Dateien nicht im Koordinatensystem des präoperativen CT geliefert
+  wurden (erkennbar daran, dass das Modell nach dem Import weit von den
+  CT-Volumina entfernt liegt).</p>
+  <p>Die Registrierung erfolgt in drei Teilschritten:</p>
+  <h2 id="planungs-stls-vorausrichten">1. Planungs-STLs
+  vorausrichten</h2>
+  <p>Klick auf <strong>1. Recenter the planning STLs</strong> zentriert
+  das Schädel-STL grob auf das präoperative Volumen und aktiviert
+  Transformations-Handles für die manuelle Feinjustierung. Ziel ist eine
+  einigermaßen korrekte Ausgangsposition für die nachfolgende
+  automatische Registrierung.</p>
+  <blockquote>
+  <p>Hier lohnt es sich, ein paar Minuten zu investieren, da die
+  Qualität der manuellen Vorausrichtung die Registrierungsgenauigkeit
+  direkt beeinflusst.</p>
+  </blockquote>
+  <h2 id="präoperatives-ct-segmentieren">2. Präoperatives CT
+  segmentieren</h2>
+  <p>Klick auf <strong>2. Segment the preop CT</strong> erstellt eine
+  Knochen-Segmentierung des präoperativen CT (Schwellenwert 200 HU,
+  beschränkt auf den Bereich des Schädel-STL). Das Ergebnis wird als
+  3D-Modell in der Szene angezeigt.</p>
+  <blockquote>
+  <p><strong>Alternative:</strong> Steht bereits ein Oberflächenmodell
+  des Schädels aus einer anderen Quelle zur Verfügung (z.B. aus einer
+  früheren Sitzung), kann dieses über das Dropdown-Feld <em>or select
+  existing model</em> ausgewählt und der Segmentierungsschritt
+  übersprungen werden. Anschließend <strong>Register to selected
+  model</strong> klicken.</p>
+  </blockquote>
+  <h2 id="planungs-stl-registrieren">3. Planungs-STL registrieren</h2>
+  <p>Klick auf <strong>3. Register plan STLs to preop CT</strong> führt
+  eine ICP-Registrierung (Iterative Closest Point) des Schädel-STL auf
+  das segmentierte präoperative Modell durch. Nach Abschluss wird der
+  RMS-Wert (Root Mean Square) der Überlagerung in einem Dialogfenster
+  angezeigt.</p>
+  <blockquote>
+  <p><strong>Qualitätskriterium:</strong> Der RMS sollte &lt; 0,5 mm
+  liegen. In der 3D-Ansicht sollten STL (grün) und Segmentierung (grau)
+  sich gleichmäßig abwechseln — ein einseitiger Farbwechsel deutet auf
+  eine systematische Verschiebung hin.</p>
+  </blockquote>
+  <blockquote>
+  <p><strong>Wichtig:</strong> Etwaige Registrierungsfehler addieren
+  sich zu den Fehlern der nachfolgenden Analyseschritte. Das Ergebnis
+  dieses Schritts sorgfältig prüfen.</p>
+  </blockquote>
+  <hr />
+  <h1 id="schritt-3-segmentierung-des-intraoperativen-psi">Schritt 3:
+  Segmentierung des intraoperativen PSI</h1>
+  <h2 id="psi-modell-auswählen">PSI-Modell auswählen</h2>
+  <p>Im Feld <strong>PSI Planned</strong> das STL-Modell des geplanten
+  PSI auswählen. Bei Fällen mit mehreren PSIs kann zu diesem Tab
+  jederzeit zurückgekehrt und ein anderes Modell ausgewählt werden.</p>
+  <h2
+  id="optional-planungs-stl-in-das-präop-koordinatensystem-übertragen">Optional:
+  Planungs-STL in das Präop-Koordinatensystem übertragen</h2>
+  <p>Wenn Schritt 2.a durchgeführt wurde, muss das PSI-STL ebenfalls ins
+  Präop-Koordinatensystem transformiert werden: Klick auf <strong>3.a
+  Align PSI to preop CT (optional)</strong> übernimmt den in Schritt 2.a
+  berechneten Transform auf das aktuell ausgewählte PSI-Modell.</p>
+  <p>Nach diesem Schritt sollte das PSI-STL in der 3D-Ansicht in der
+  korrekten anatomischen Position sichtbar sein.</p>
+  <h2 id="psi-segmentieren">PSI segmentieren</h2>
+  <p>Klick auf <strong>3.b Segment intraop PSI</strong> führt folgende
+  Schritte aus:</p>
+  <ol type="1">
+  <li>Das postoperative Volumen wird auf den Bereich des geplanten PSI
+  zugeschnitten (Bounding Box des PSI-Modells mit 2 cm Puffer).</li>
+  <li>Das Programm wechselt in den <em>Segment Editor</em>.</li>
+  <li>Das Threshold-Werkzeug wird mit einem Startwert von 1750 HU
+  vorbelegt und automatisch angewendet.</li>
+  </ol>
+  <p>Im Segment Editor sind in der Regel zwei Nachbearbeitungen
+  nötig:</p>
+  <ol type="1">
+  <li><strong>Schwellenwert anpassen:</strong> Falls zu viel (z.B.
+  Knochen mit eingeschlossen) oder zu wenig (PSI nicht vollständig
+  erfasst) segmentiert wurde, den Mindestschwellenwert anpassen. Die
+  Umrisse des PSI sollten klar abgegrenzt sein; die Binnenstruktur ist
+  weniger kritisch.</li>
+  <li><strong>Überschüssige Strukturen entfernen:</strong> Mit dem
+  <strong>Scissors</strong>-Werkzeug (Scherensymbol) alle segmentierten
+  Bereiche entfernen, die nicht zum PSI gehören (Schrauben, weitere
+  Platten, Knochenfragmente).</li>
+  </ol>
+  <p><img src="Screenshots/03_segmentation.png" /></p>
+  <p>Nach Abschluss zurück zum Modul <strong>General PSOI Analysis
+  Workflow</strong> wechseln.</p>
+  <h2 id="bestehende-segmentierung-verwenden">Bestehende Segmentierung
+  verwenden</h2>
+  <p>Wurde das PSI bereits in einer früheren Sitzung segmentiert, kann
+  die bestehende Segmentierung über das Dropdown-Feld <em>or use
+  existing</em> ausgewählt und anschließend mit <strong>Use
+  selected</strong> bestätigt werden.</p>
+  <hr />
+  <h1 id="schritt-4-psis-überlagern">Schritt 4: PSIs überlagern</h1>
+  <h2 id="automatische-registrierung-1">Automatische Registrierung</h2>
+  <p>Klick auf <strong>4. Align PSIs</strong> führt folgende Schritte
+  aus:</p>
+  <ol type="1">
+  <li>Die ausgewählte Segmentierung wird in ein Oberflächenmodell
+  konvertiert (nur das ausgewählte Segment wird exportiert).</li>
+  <li>Eine Kopie des Planungs-STL wird erstellt und mittels
+  ICP-Algorithmus auf das postoperative Modell registriert.</li>
+  <li>Der Transform wird als interaktiv bearbeitbares Handle
+  angezeigt.</li>
+  <li>Nach Abschluss wird der RMS-Wert in einem Dialogfenster
+  ausgegeben.</li>
+  </ol>
+  <blockquote>
+  <p><strong>Qualitätskriterium:</strong> Der RMS sollte &lt; 0,5 mm
+  liegen. Falls die Ausrichtung nicht passt, kann über die
+  eingeblendeten Transformations-Handles nachkorrigiert werden. Das PSI
+  besitzt eine minimale Flexibilität — daher ist eine global gute
+  Überlagerung anzustreben, auch wenn nicht alle Bereiche gleichermaßen
+  perfekt passen.</p>
+  </blockquote>
+  <p><img src="Screenshots/04_align_psis.png" /></p>
+  <h2 id="manuelle-ausrichtung-ohne-segmentierung">Manuelle Ausrichtung
+  (ohne Segmentierung)</h2>
+  <p>Als Alternative zur Segmentierung steht der Button <strong>4b.
+  Manual alignment (no segmentation)</strong> zur Verfügung. Dabei
+  wird:</p>
+  <ul>
+  <li>Eine Kopie des Planungs-STL in der Szene erstellt</li>
+  <li>Ein zentrierter linearer Transform mit interaktiven Handles
+  angelegt</li>
+  <li>Keine automatische Registrierung durchgeführt</li>
+  </ul>
+  <p>Diese Option eignet sich für Fälle, in denen das PSI im
+  postoperativen CT nur schlecht sichtbar ist und eine manuelle
+  Zuordnung erforderlich ist.</p>
+  <hr />
+  <h1 id="schritt-5-abstandsanalyse">Schritt 5: Abstandsanalyse</h1>
+  <p>Klick auf <strong>5. Calculate Comparison</strong> führt eine
+  Punkt-zu-Punkt-Abstandsanalyse zwischen dem Planungs-STL und der
+  registrierten Postop-Position durch.</p>
+  <p>Das Ergebnis wird als farbkodiertes Abstandsmodell dargestellt,
+  wobei die Abstände als vorzeichenbehaftete Werte (von Planung zu
+  Postop) gespeichert werden. Die Farbskala reicht von kalt (geringer
+  Abstand) bis warm (größerer Abstand).</p>
+  <p><img src="Screenshots/05_distance_model.png" /></p>
+  <hr />
+  <h1 id="schritt-6-ergebnisausgabe">Schritt 6: Ergebnisausgabe</h1>
+  <p>Klick auf <strong>Output Results</strong> berechnet alle
+  verbleibenden Kenngrößen und schreibt die Ergebnisse in eine CSV-Datei
+  im Verzeichnis der PSI-STL-Datei. Der Dateiname lautet
+  <code>output_&lt;Name des PSI-Modells&gt;.csv</code>.</p>
+  <h2 id="ausgabewerte">Ausgabewerte</h2>
+  <table>
+  <colgroup>
+  <col style="width: 54%" />
+  <col style="width: 45%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Spaltenname</th>
+  <th>Bedeutung</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><code>*_rms_plan_to_preop</code></td>
+  <td>RMS-Abstand (mm) der Registrierung Planungs-STL → Präop-CT</td>
+  </tr>
+  <tr>
+  <td><code>*_rms_plan_to_postop</code></td>
+  <td>RMS-Abstand (mm) der Registrierung Planungs-STL → Postop-PSI</td>
+  </tr>
+  <tr>
+  <td><code>*_dice_plan_intraop</code></td>
+  <td>Dice-Koeffizient (Überlappungsmaß, 0–1)</td>
+  </tr>
+  <tr>
+  <td><code>*_hausdorff_avg_planned_postop</code></td>
+  <td>Durchschnittliche Hausdorff-Distanz (mm)</td>
+  </tr>
+  <tr>
+  <td><code>*_hausdorff_max_planned_postop</code></td>
+  <td>Maximale Hausdorff-Distanz (mm)</td>
+  </tr>
+  <tr>
+  <td><code>*_rotation_x/y/z</code></td>
+  <td>Rotationsfehler um x, y, z-Achse (Grad, Euler XYZ)</td>
+  </tr>
+  <tr>
+  <td><code>*_distance</code></td>
+  <td>Euklidischer Abstand zwischen den Bounding-Box-Zentren (mm)</td>
+  </tr>
+  <tr>
+  <td><code>*_vector_x/y/z</code></td>
+  <td>Verschiebungsvektor zwischen den Bounding-Box-Zentren (mm)</td>
+  </tr>
+  <tr>
+  <td><code>*_m2m_rms</code></td>
+  <td>RMS der vorzeichenbehafteten Punkt-zu-Punkt-Abstände (mm)</td>
+  </tr>
+  <tr>
+  <td><code>registration_ncc</code></td>
+  <td>Normalized Cross-Correlation der CT-Registrierung (−1 bis 1)</td>
+  </tr>
+  </tbody>
+  </table>
+  <blockquote>
+  <p>Die CSV-Datei kann direkt in MS Excel oder LibreOffice Calc
+  importiert werden. Die Ergebniszeile sollte in die fallübergreifende
+  Auswertungstabelle kopiert werden.</p>
+  </blockquote>
+  <p><img src="Screenshots/06_output_results.png" /></p>
+  <hr />
+  <h1 id="tipps-und-hinweise">Tipps und Hinweise</h1>
+  <ul>
+  <li><strong>Mehrere PSIs pro Fall:</strong> Für jeden PSI kann zu
+  Schritt 3 zurückgekehrt werden. Ein anderes Planungs-Modell auswählen
+  und den Workflow ab dort wiederholen. Die Ergebnisse werden mit dem
+  jeweiligen Modellnamen als Präfix gespeichert.</li>
+  <li><strong>Koordinatensystem prüfen:</strong> Liegt das importierte
+  STL weit abseits der CT-Volumina, ist fast immer Schritt 2.a
+  erforderlich.</li>
+  <li><strong>Manuelle Feinjustierung nach Schritt 4:</strong> Die
+  Transformations-Handles nach <em>Align PSIs</em> können für manuelle
+  Korrekturen genutzt werden. Wichtig: Die Korrektur muss abgeschlossen
+  sein, bevor Schritt 5 (<em>Calculate Comparison</em>) ausgeführt wird,
+  da dort der Transform eingebrannt wird.</li>
+  <li><strong>Segmentierungs-Qualität:</strong> Die
+  Segmentierungsgenauigkeit in Schritt 3 hat einen erheblichen Einfluss
+  auf das Registrierungsergebnis in Schritt 4. Lieber etwas Zeit in eine
+  saubere Segmentierung investieren.</li>
+  <li><strong>Registrierungsmaske (Schritt 2):</strong> Besonders
+  hilfreich, wenn präoperatives und postoperatives CT in verschiedenen
+  Körperpositionen aufgenommen wurden (z.B. liegende vs. sitzende
+  Position). Die Maske kann die Registrierung auf die relevante
+  anatomische Region einschränken.</li>
+  <li><strong>Szene speichern:</strong> Nach abgeschlossener Auswertung
+  die Slicer-Szene (.mrb) im Fallverzeichnis sichern.</li>
+  </ul>
+  <hr />
+  <h1 id="fehlersuche">Fehlersuche</h1>
+  <table>
+  <colgroup>
+  <col style="width: 26%" />
+  <col style="width: 50%" />
+  <col style="width: 23%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Problem</th>
+  <th>Mögliche Ursache</th>
+  <th>Lösung</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td>PSI-STL liegt weit vom CT entfernt</td>
+  <td>STL in eigenem Koordinatensystem des Herstellers</td>
+  <td>Schritt 2.a durchführen</td>
+  </tr>
+  <tr>
+  <td>RMS nach Schritt 2.a &gt; 0,5 mm</td>
+  <td>Manuelle Vorausrichtung unzureichend</td>
+  <td>„Recenter” erneut und Vorausrichtung verbessern, dann erneut
+  registrieren</td>
+  </tr>
+  <tr>
+  <td>Threshold in Schritt 3 segmentiert zu viel Knochen</td>
+  <td>Untere HU-Grenze zu niedrig</td>
+  <td>Threshold-Untergrenze auf ≥ 1750 HU erhöhen oder manuell mit
+  Scissors nachbearbeiten</td>
+  </tr>
+  <tr>
+  <td>Threshold erfasst PSI nicht vollständig</td>
+  <td>PSI aus niedrig-attenuierendem Material (Titan: ~2000 HU, PEEK:
+  ~400 HU)</td>
+  <td>Schwellenwert entsprechend dem Material anpassen</td>
+  </tr>
+  <tr>
+  <td>Align PSIs konvergiert auf falsche Position</td>
+  <td>Planungs-STL noch nicht in Präop-Koordinatensystem überführt</td>
+  <td>Schritt 3.a (<em>Align PSI to preop CT</em>) vor Segmentierung
+  ausführen</td>
+  </tr>
+  <tr>
+  <td>RMS nach Schritt 4 &gt; 0,5 mm</td>
+  <td>PSI verformt oder Segmentierung ungenau</td>
+  <td>Ergebnis visuell prüfen; ggf. Segmentierung in Schritt 3
+  verbessern und wiederholen</td>
+  </tr>
+  <tr>
+  <td>Keine CSV-Ausgabe in Schritt 6</td>
+  <td>PSI-STL-Datei hat keinen Dateipfad (z.B. direkt importiert ohne
+  Speicherort)</td>
+  <td>PSI-Modell als STL-Datei auf der Festplatte speichern, bevor die
+  Auswertung gestartet wird</td>
+  </tr>
+  <tr>
+  <td>Rotationswerte unerwartet groß</td>
+  <td>Transform aus Schritt 4 enthält noch eine Vortransformation</td>
+  <td>Sicherstellen dass der Transform vor Schritt 5 nicht manuell
+  überschrieben wurde</td>
+  </tr>
+  </tbody>
+  </table>
+	</div>
+      </main>
+    </div>
+    
+    <!-- After body contents -->
+        <!-- Add comment hosting service here (optional) -->
+
+        <!-- Footer -->
+        <footer class="footer bd-footer bg-body-tertiary mt-auto py-md-3 py-4">
+          <div class="container text-body-secondary py-md-3 py-4" align="center">
+            <!-- Update licences -->
+            Content is licensed under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>
+            &nbsp;|&nbsp;
+            Sourcecode is licensed under <a href="https://www.gnu.org/licenses/gpl-3.0.en.html" target="_blank" rel="noopener">GPL-3.0</a>
+            <br />
+            <!-- Please keep the following line -->
+            Built by <a href="https://github.com/ashki23/pandoc-bootstrap" target="_blank" rel="noopener">pandoc-bootstrap</a> theme
+            <br />
+            <!-- Update copyright -->
+            &copy; Johannes Schulze
+          </div>
+        </footer>
+
+        <!-- Add global site tag (gtag.js) and site analytics here (optional) -->
+        
+    <!-- Bootstrap Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    
+    <!-- Highlight.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js" integrity="sha512-6yoqbrcLAHDWAdQmiRlHG4+m0g/CT/V9AGyxabG8j7Jk8j3r3K6due7oqpiRMZqcYe9WM2gPcaNNxnl2ux+3tA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+        <!-- Mathjax -->
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        
+    <!-- Custom Scripts -->
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+	  const htmlElement = document.documentElement;
+	  const highlightStyle = document.getElementById("highlight-style");
+	  
+	  // Function to update Highlight.js style based on theme
+	  const updateHighlightStyle = (theme) => {
+              const lightTheme = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/stackoverflow-light.min.css";
+              const darkTheme = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css";
+              highlightStyle.href = theme === "dark" ? darkTheme : lightTheme;
+	  };
+	  
+	  // Function to set the theme
+	  const setTheme = (theme) => {
+              htmlElement.setAttribute("data-bs-theme", theme);
+              localStorage.setItem("theme", theme); // Save the theme to localStorage
+              updateHighlightStyle(theme);
+	  };
+	  
+	  // Get saved theme from localStorage or fallback to default ("light")
+	  const savedTheme = localStorage.getItem("theme") || "light";
+	  setTheme(savedTheme);
+	  
+	  // Event listener for theme dropdown
+	  document.querySelectorAll(".dropdown-item").forEach((item) => {
+              item.addEventListener("click", (e) => {
+		  e.preventDefault();
+		  const selectedTheme = item.getAttribute("data-theme");
+		  setTheme(selectedTheme);
+              });
+	  });
+	  
+	  // Initialize Highlight.js
+	  hljs.highlightAll();
+      });
+    </script>
+  </body>
+</html>
