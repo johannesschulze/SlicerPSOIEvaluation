@@ -30,6 +30,86 @@ from slicer.parameterNodeWrapper import (
 
 from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode, vtkMRMLNode, vtkMRMLSegmentationNode, vtkMRMLTransformNode
 
+
+class PSIWorkItem:
+    """Per-PSI analysis state stored as a vtkMRMLScriptedModuleNode in the MRML scene.
+    Persists with the .mrb scene file. The main parameter node acts as the active slot;
+    work items are the persistent store that is swapped in/out on switch."""
+
+    _TAG      = "GeneralPSOIWorkflow.isWorkItem"
+    _PLANNED  = "GeneralPSOIWorkflow.plannedModelID"
+    _POSTOP   = "GeneralPSOIWorkflow.postopModelID"
+    _DISTANCE = "GeneralPSOIWorkflow.distanceModelID"
+    _SEG      = "GeneralPSOIWorkflow.segmentationID"
+    _SEG_ID   = "GeneralPSOIWorkflow.segmentID"
+    _RMS      = "GeneralPSOIWorkflow.rmsPlanToPostop"
+
+    def __init__(self, node):
+        self._node = node
+
+    @classmethod
+    def create(cls, plannedModel):
+        node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScriptedModuleNode")
+        node.SetName(f"PSI-WorkItem-{plannedModel.GetName()}")
+        node.SetAttribute(cls._TAG, "true")
+        node.SetAttribute(cls._PLANNED, plannedModel.GetID())
+        return cls(node)
+
+    @classmethod
+    def findAll(cls):
+        result = []
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLScriptedModuleNode")):
+            node = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLScriptedModuleNode")
+            if node.GetAttribute(cls._TAG) == "true":
+                result.append(cls(node))
+        return result
+
+    @classmethod
+    def findForModel(cls, plannedModel):
+        if plannedModel is None:
+            return None
+        for item in cls.findAll():
+            if item._node.GetAttribute(cls._PLANNED) == plannedModel.GetID():
+                return item
+        return None
+
+    @property
+    def nodeId(self):
+        return self._node.GetID()
+
+    @property
+    def displayName(self):
+        nid = self._node.GetAttribute(self._PLANNED)
+        node = slicer.mrmlScene.GetNodeByID(nid) if nid else None
+        return node.GetName() if node else self._node.GetName()
+
+    def _getNode(self, attr):
+        nid = self._node.GetAttribute(attr)
+        return slicer.mrmlScene.GetNodeByID(nid) if nid else None
+
+    def _setNode(self, attr, node):
+        self._node.SetAttribute(attr, node.GetID() if node else "")
+
+    def saveFromParameterNode(self, pn):
+        self._setNode(self._POSTOP,   pn.psiPostopModel)
+        self._setNode(self._DISTANCE, pn.psiDistanceModel)
+        self._setNode(self._SEG,      pn.psiPostopSegmentation)
+        self._node.SetAttribute(self._SEG_ID, pn.psiPostopSegmentId or "")
+        self._node.SetAttribute(self._RMS, str(pn.rmsPlanToPostop))
+
+    def loadToParameterNode(self, pn):
+        pn.psiPlannedModel       = self._getNode(self._PLANNED)
+        pn.psiPostopModel        = self._getNode(self._POSTOP)
+        pn.psiDistanceModel      = self._getNode(self._DISTANCE)
+        pn.psiPostopSegmentation = self._getNode(self._SEG)
+        pn.psiPostopSegmentId    = self._node.GetAttribute(self._SEG_ID) or ""
+        rms = self._node.GetAttribute(self._RMS)
+        pn.rmsPlanToPostop = float(rms) if rms else 0.0
+
+    def remove(self):
+        slicer.mrmlScene.RemoveNode(self._node)
+
+
 class GeneralPSOIWorkflowModule(ScriptedLoadableModule):
     """Uses ScriptedLoadableModule base class, available at:
     https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
@@ -102,6 +182,10 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         self._brainsObserverTag = None
         self._preopCropROI = None
         self._postopCropROI = None
+        self._workItemComboBox = None
+        self._addWorkItemButton = None
+        self._removeWorkItemButton = None
+        self._outputAllButton = None
 
     def setup(self) -> None:
         """Called when the user opens the module the first time and the widget is initialized."""
@@ -181,6 +265,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
+        self._setupWorkItemUI()
 
     def cleanup(self) -> None:
         """Called when the application closes and the module widget is destroyed."""
@@ -191,6 +276,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         # Make sure parameter node exists and observed
         self.initializeParameterNode()
         self.ui.stepsToolbox.setCurrentIndex(self._parameterNode.step)
+        self._refreshWorkItemCombo()
 
     def exit(self) -> None:
         """Called each time the user opens a different module."""
@@ -202,14 +288,17 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
 
     def onSceneStartClose(self, caller, event) -> None:
         """Called just before the scene is closed."""
-        # Parameter node will be reset, do not use it anymore
         self.setParameterNode(None)
+        if self._workItemComboBox is not None:
+            self._workItemComboBox.blockSignals(True)
+            self._workItemComboBox.clear()
+            self._workItemComboBox.blockSignals(False)
 
     def onSceneEndClose(self, caller, event) -> None:
         """Called just after the scene is closed."""
-        # If this module is shown while the scene is closed then recreate a new parameter node immediately
         if self.parent.isEntered:
             self.initializeParameterNode()
+            self._refreshWorkItemCombo()
     
     def initializeParameterNode(self) -> None:
         """Ensure parameter node exists and observed."""
@@ -367,11 +456,14 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
     
     def onApplyTransformsToPlannedModelButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
+            if not self._ensureActiveWorkItem():
+                return
             self.logic.applyTransformsToPlannedModel()
             transformNode = slicer.mrmlScene.GetFirstNodeByName("registration plan to preop")
             if transformNode is None:
                 transformNode = slicer.mrmlScene.GetFirstNodeByName("manual registration plan to preop")
             self._parameterNode.planToPreopTransform = transformNode
+            self._saveCurrentWorkItem()
 
     def onApplyAlignmentTransformButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to apply alignment transform."), waitCursor=True):
@@ -379,11 +471,17 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
             if model is None:
                 slicer.util.errorDisplay("No model selected.")
                 return
+            if not self._ensureActiveWorkItem():
+                return
             self.logic.applyAlignmentTransformToModel(model)
+            self._saveCurrentWorkItem()
 
     def onPrepareSegmentationButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
+            if not self._ensureActiveWorkItem():
+                return
             self.logic.prepareSegmentation()
+            self._saveCurrentWorkItem()
             self._nextStep()
 
     def _onPsiPostopSegmentationChanged(self, node) -> None:
@@ -413,18 +511,26 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
             if self._parameterNode.psiPostopSegmentation is None:
                 slicer.util.errorDisplay("No segmentation selected.")
                 return
+            if not self._ensureActiveWorkItem():
+                return
+            self._saveCurrentWorkItem()
             self._nextStep()
     
     def onAlignPSIsButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
+            if not self._ensureActiveWorkItem():
+                return
             self.logic.alignPSIModels()
+            self._saveCurrentWorkItem()
             slicer.util.messageBox(f"Registration completed (RMS: {self.logic.getParameterNode().rmsPlanToPostop})")
             self._nextStep()
 
     def onManualAlignPSIsButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to set up manual alignment."), waitCursor=True):
+            if not self._ensureActiveWorkItem():
+                return
             self.logic.manualAlignPSIModel()
+            self._saveCurrentWorkItem()
             self._nextStep()
 
     def onRegisterToSelectedModelButton(self) -> None:
@@ -441,14 +547,18 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
 
     def onCalculateM2MDistanceButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
+            if not self._ensureActiveWorkItem():
+                return
             self.logic.calculatePSIModelToModelDistance()
+            self._saveCurrentWorkItem()
             self._nextStep()
 
     def onPrintPSIResultsButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
+            if not self._ensureActiveWorkItem():
+                return
             self.logic.printPSIResults()
+            self._saveCurrentWorkItem()
             slicer.util.messageBox("<b>Output complete!</b><p>You have finished this case. Don't forget so save the scene in the appropriate directory!</p>")
 
     def onPlannedModelSelectorChanged(self, node) -> None:
@@ -481,6 +591,180 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
     def onOpenDocumentationButton(self) -> None:
         docPath = self.resourcePath("Docs/GeneralPSOIWorkflowModule/psi_analysis_workflow_EN.html")
         qt.QDesktopServices.openUrl(qt.QUrl.fromLocalFile(docPath))
+
+    # ── Work-item management ──────────────────────────────────────────────────
+
+    def _setupWorkItemUI(self):
+        """Inject work-item selector at the top of Step 3 and Output-All into Step 6."""
+        # Step 3: work item selector bar
+        step3Widget = self.ui.stepsToolbox.widget(3)
+        step3Layout = step3Widget.layout() if step3Widget else None
+
+        groupBox = qt.QGroupBox("PSI / Fragment Work Items")
+        hLayout = qt.QHBoxLayout(groupBox)
+
+        self._workItemComboBox = qt.QComboBox()
+        self._workItemComboBox.setSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Fixed)
+        self._workItemComboBox.setToolTip("Switch between PSI / bone-fragment work items")
+
+        self._addWorkItemButton = qt.QPushButton("Add")
+        self._addWorkItemButton.setToolTip(
+            "Create a new work item for the currently selected PSI planned model"
+        )
+        self._removeWorkItemButton = qt.QPushButton("Remove")
+        self._removeWorkItemButton.setToolTip("Remove the selected work item from the scene")
+        self._removeWorkItemButton.enabled = False
+
+        hLayout.addWidget(self._workItemComboBox)
+        hLayout.addWidget(self._addWorkItemButton)
+        hLayout.addWidget(self._removeWorkItemButton)
+
+        if step3Layout is not None:
+            step3Layout.insertWidget(0, groupBox)
+
+        self._workItemComboBox.connect("currentIndexChanged(int)", self._onWorkItemComboChanged)
+        self._addWorkItemButton.connect("clicked(bool)", self._onAddWorkItem)
+        self._removeWorkItemButton.connect("clicked(bool)", self._onRemoveWorkItem)
+
+        # Step 6: output-all button
+        step6Widget = self.ui.stepsToolbox.widget(6)
+        step6Layout = step6Widget.layout() if step6Widget else None
+        self._outputAllButton = qt.QPushButton("6b. Output All Work Items")
+        self._outputAllButton.setToolTip(
+            "Run Output Results for every work item and write a single combined CSV"
+        )
+        self._outputAllButton.enabled = False
+        if step6Layout is not None:
+            step6Layout.addWidget(self._outputAllButton)
+        self._outputAllButton.connect("clicked(bool)", self._onOutputAllButton)
+
+    def _refreshWorkItemCombo(self, selectNodeId=None):
+        """Repopulate the combo box from work items currently in the scene."""
+        if self._workItemComboBox is None:
+            return
+        prev = (self._workItemComboBox.itemData(self._workItemComboBox.currentIndex)
+                if self._workItemComboBox.count > 0 else None)
+        self._workItemComboBox.blockSignals(True)
+        self._workItemComboBox.clear()
+        for item in PSIWorkItem.findAll():
+            self._workItemComboBox.addItem(item.displayName, item.nodeId)
+        target = selectNodeId or prev
+        if target:
+            for i in range(self._workItemComboBox.count):
+                if self._workItemComboBox.itemData(i) == target:
+                    self._workItemComboBox.setCurrentIndex(i)
+                    break
+        self._workItemComboBox.blockSignals(False)
+        hasItems = self._workItemComboBox.count > 0
+        if self._removeWorkItemButton:
+            self._removeWorkItemButton.enabled = hasItems
+        if self._outputAllButton:
+            self._outputAllButton.enabled = hasItems
+
+    def _activeWorkItem(self):
+        """Return the PSIWorkItem currently selected in the combo, or None."""
+        if self._workItemComboBox is None or self._workItemComboBox.count == 0:
+            return None
+        nodeId = self._workItemComboBox.itemData(self._workItemComboBox.currentIndex)
+        if not nodeId:
+            return None
+        node = slicer.mrmlScene.GetNodeByID(nodeId)
+        return PSIWorkItem(node) if node else None
+
+    def _saveCurrentWorkItem(self):
+        """Persist current parameter-node PSI state into the active work item."""
+        item = self._activeWorkItem()
+        if item and self._parameterNode:
+            item.saveFromParameterNode(self._parameterNode)
+
+    def _ensureActiveWorkItem(self):
+        """Ensure a work item exists for the current planned model, creating one if needed.
+        Returns False (with error display) if no planned model is selected."""
+        if self._parameterNode is None:
+            return False
+        model = self._parameterNode.psiPlannedModel
+        if model is None:
+            slicer.util.errorDisplay("No PSI planned model selected.")
+            return False
+        existing = PSIWorkItem.findForModel(model)
+        if existing:
+            # Silently switch combo to that item if it isn't already active
+            for i in range(self._workItemComboBox.count):
+                if self._workItemComboBox.itemData(i) == existing.nodeId:
+                    if self._workItemComboBox.currentIndex != i:
+                        self._saveCurrentWorkItem()
+                        self._workItemComboBox.blockSignals(True)
+                        self._workItemComboBox.setCurrentIndex(i)
+                        self._workItemComboBox.blockSignals(False)
+                    break
+            return True
+        # Create a new work item for this model
+        self._saveCurrentWorkItem()
+        item = PSIWorkItem.create(model)
+        self._refreshWorkItemCombo(selectNodeId=item.nodeId)
+        return True
+
+    def _onWorkItemComboChanged(self, index):
+        """Switch to the work item selected in the combo."""
+        if self._parameterNode is None:
+            return
+        self._saveCurrentWorkItem()
+        item = self._activeWorkItem()
+        if item:
+            item.loadToParameterNode(self._parameterNode)
+            model = self._parameterNode.psiPlannedModel
+            if model:
+                modelId = model.GetID()
+                self.ui.psiPlannedModelSelector.setCurrentNodeID(modelId)
+                self.ui.psiPlannedModelSelectorCalculation.setCurrentNodeID(modelId)
+                self.ui.psiPlannedModelSelectorOutput.setCurrentNodeID(modelId)
+
+    def _onAddWorkItem(self):
+        """Explicitly create a work item for the currently selected planned model."""
+        with slicer.util.tryWithErrorDisplay("Failed to add work item.", waitCursor=False):
+            if self._parameterNode is None:
+                return
+            model = self._parameterNode.psiPlannedModel
+            if model is None:
+                slicer.util.errorDisplay("Select a PSI planned model first.")
+                return
+            existing = PSIWorkItem.findForModel(model)
+            if existing:
+                slicer.util.messageBox(f"A work item for '{model.GetName()}' already exists.")
+                return
+            self._saveCurrentWorkItem()
+            item = PSIWorkItem.create(model)
+            self._refreshWorkItemCombo(selectNodeId=item.nodeId)
+
+    def _onRemoveWorkItem(self):
+        """Remove the currently selected work item from the scene."""
+        with slicer.util.tryWithErrorDisplay("Failed to remove work item.", waitCursor=False):
+            item = self._activeWorkItem()
+            if item is None:
+                return
+            if not slicer.util.confirmOkCancelDisplay(
+                f"Remove work item '{item.displayName}'?\nThis does not delete the model nodes.",
+                windowTitle="Remove Work Item",
+            ):
+                return
+            item.remove()
+            self._refreshWorkItemCombo()
+
+    def _onOutputAllButton(self):
+        """Output results for all work items into a single combined CSV."""
+        with slicer.util.tryWithErrorDisplay("Failed to output all results.", waitCursor=True):
+            self._saveCurrentWorkItem()
+            activeId = (self._workItemComboBox.itemData(self._workItemComboBox.currentIndex)
+                        if self._workItemComboBox.count > 0 else None)
+            outputFile = self.logic.printAllPSIResults()
+            # Restore the previously active work item in the parameter node
+            if activeId:
+                node = slicer.mrmlScene.GetNodeByID(activeId)
+                if node and self._parameterNode:
+                    PSIWorkItem(node).loadToParameterNode(self._parameterNode)
+            slicer.util.messageBox(
+                f"<b>All results exported.</b><p>Combined CSV written to:<br>{outputFile}</p>"
+            )
 
     def onReload(self):
         logging.info("Reloading GeneralPSOIWorkflowModule")
@@ -1153,6 +1437,46 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             psiDistanceModel,
             psiPlannedModel
         )
+
+    def printAllPSIResults(self):
+        """Iterate every PSI work item, collect per-item results, write a combined CSV."""
+        pn = self.getParameterNode()
+        items = PSIWorkItem.findAll()
+        if not items:
+            raise Exception("No PSI work items found in the current scene.")
+
+        allResults = {}
+        firstOutputPath = None
+
+        for item in items:
+            item.loadToParameterNode(pn)
+            if None in (pn.psiPlannedModel, pn.psiPostopModel, pn.psiDistanceModel):
+                print(f"Skipping '{item.displayName}': not fully analysed yet.", file=sys.stderr)
+                continue
+            result = self.printResults(
+                pn.psiPlannedModel.GetName(),
+                pn.psiPlannedModel,
+                pn.psiPostopModel,
+                pn.psiDistanceModel,
+                pn.psiPlannedModel,
+            )
+            allResults.update(result)
+            if firstOutputPath is None:
+                storage = pn.psiPlannedModel.GetStorageNode()
+                if storage and storage.GetFileName():
+                    firstOutputPath = os.path.dirname(storage.GetFileName())
+
+        if not allResults:
+            raise Exception("No completed work items to export.")
+
+        outputFile = os.path.join(firstOutputPath or ".", "output_all_psis.csv")
+        with open(outputFile, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(allResults.keys())
+            writer.writerow(allResults.values())
+
+        print(f"Combined output written to {outputFile}")
+        return outputFile
 
     def printAllResults(self):
         resultsMaxilla = self.printMaxillaResults()
