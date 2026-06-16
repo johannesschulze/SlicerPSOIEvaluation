@@ -516,26 +516,26 @@ class LeFortPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 		self.setDefault3dView(1)
 
 	def alignMaxillaModels(self):
-		registeredModel = self.registerSourceModelToTargetModel("max preop cropped", "max planned cropped", "registration preop-planned", "max preop cropped registered to planned")
+		registeredModel = self.registerSourceModelToTargetModel("max preop cropped", "max planned cropped", "max registration preop-planned", "max preop cropped registered to planned")
 		clonedModel = self.cloneModel(registeredModel, "max preop cropped registered to postop")
 		registeredModel.GetDisplayNode().SetColor(COLOR_PLANNED)
 		clonedModel.GetDisplayNode().SetColor(COLOR_POSTOP)
 
 		# Das Postop-Model in die geplante Position bringen
-		postopModelInPlannedPosition = self.registerSourceModelToTargetModel("max postop cropped", "max planned cropped", "registration postop-planned", "max postop cropped registered to planned")
+		postopModelInPlannedPosition = self.registerSourceModelToTargetModel("max postop cropped", "max planned cropped", "max registration postop-planned", "max postop cropped registered to planned")
 		postopModelInPlannedPosition.GetDisplayNode().SetVisibility(False)
 	
 		# jetzt das oben bereit nochmal geklonte Preop-Modell in die Postop-position zu bringen
 		# dafür die Transfprmation postop-planned duplizieren und invertieren und diese danna uf das 
 		# duplizierte Präop-Modell anwenden. Im Ergebnis sollte es das preop-Modell drei mal geben, in der 
 		# Ausgangsposition, der geplanten Position und der postoperativen Position
-		clonedTransform = self.cloneModel(slicer.util.getNode("registration postop-planned"), "registration planned-postop")
+		clonedTransform = self.cloneModel(slicer.util.getNode("max registration postop-planned"), "max registration planned-postop")
 		clonedTransform.Inverse()
 		clonedModel.SetAndObserveTransformNodeID(clonedTransform.GetID())
 		clonedModel.HardenTransform()
 
 	def alignPSIModels(self):
-		registeredModel = self.registerSourceModelToTargetModel("lefortpsi planned", "lefortpsi postop", "registration psi planned-postop", "lefortpsi planned registered to postop")
+		registeredModel = self.registerSourceModelToTargetModel("lefortpsi planned", "lefortpsi postop", "lefortpsi registration planned-postop", "lefortpsi planned registered to postop")
 		registeredModel.GetDisplayNode().SetColor(COLOR_POSTOP)
 
 	def registerSourceModelToTargetModel(self, sourceModelName, targetModelName, transformName, registeredModelName = None):
@@ -628,7 +628,7 @@ class LeFortPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 		resultsTableRow[f'{prefix}_hausdorff_max_planned_postop'] = diceAndHausdorff['maxHausdorffDistance']
 			
 		# calculate angle bewteen planned and postop position
-		transformNode = slicer.util.getNode("registration planned-postop")
+		transformNode = slicer.util.getNode(f"{prefix} registration planned-postop")
 		rotMat = slicer.util.arrayFromTransformMatrix(transformNode)
 		rotation = scipy.spatial.transform.Rotation.from_matrix(rotMat[:3, :3])
 		euler_angles_xyz = rotation.as_euler("xyz", degrees=True)

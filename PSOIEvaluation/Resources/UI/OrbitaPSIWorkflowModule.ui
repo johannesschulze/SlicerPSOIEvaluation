@@ -202,6 +202,100 @@ QToolBox::tab:selected {
         </layout>
        </item>
        <item>
+        <widget class="QLabel" name="labelCropDescription">
+         <property name="text">
+          <string>&lt;b&gt;Optional: Crop volumes&lt;/b&gt;</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="hLayoutCropPreop">
+         <item>
+          <widget class="QLabel" name="labelCropPreop">
+           <property name="text">
+            <string>Preop:</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>55</width>
+             <height>0</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="cropPreopButton">
+           <property name="text">
+            <string>Crop volume</string>
+           </property>
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="applyCropPreopButton">
+           <property name="text">
+            <string>Apply crop</string>
+           </property>
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="hLayoutCropPostop">
+         <item>
+          <widget class="QLabel" name="labelCropPostop">
+           <property name="text">
+            <string>Postop:</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>55</width>
+             <height>0</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="cropPostopButton">
+           <property name="text">
+            <string>Crop volume</string>
+           </property>
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="applyCropPostopButton">
+           <property name="text">
+            <string>Apply crop</string>
+           </property>
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QPushButton" name="alignMidlineButton">
+         <property name="toolTip">
+          <string>Rotates the preop CT to align the skull midsagittal plane with x=0 using PCA on cortical bone voxels. Interaction handles are shown for manual fine-tuning.</string>
+         </property>
+         <property name="text">
+          <string>1a. Align to Midline (PCA)</string>
+         </property>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QPushButton" name="prepareSceneButton">
          <property name="text">
           <string>1. Prepare Scene</string>
@@ -372,6 +466,42 @@ QToolBox::tab:selected {
         </widget>
        </item>
        <item>
+        <layout class="QHBoxLayout" name="hLayoutExistingPreopModel">
+         <item>
+          <widget class="QLabel" name="labelOrUseExistingPreopModel">
+           <property name="text">
+            <string>or select existing model:</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="qMRMLNodeComboBox" name="preopModelSelector">
+           <property name="nodeTypes">
+            <stringlist>
+             <string>vtkMRMLModelNode</string>
+            </stringlist>
+           </property>
+           <property name="noneEnabled">
+            <bool>true</bool>
+           </property>
+           <property name="addEnabled">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="registerToSelectedModelButton">
+           <property name="text">
+            <string>Register to selected model</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
         <widget class="QLabel" name="label_7">
          <property name="text">
           <string>&lt;p&gt;&lt;b&gt;Importat:&lt;/b&gt; Carefully check the result of the registration process, since any deviation invalidates the results of the following analysis&lt;/p&gt;</string>
@@ -451,11 +581,25 @@ QToolBox::tab:selected {
         </layout>
        </item>
        <item>
-        <widget class="QPushButton" name="applyTransformsToPlannedModelButton">
-         <property name="text">
-          <string>3.a Align PSI to preop CT (optional)</string>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="hLayoutAlignPSI">
+         <item>
+          <widget class="QPushButton" name="applyTransformsToPlannedModelButton">
+           <property name="text">
+            <string>3.a Align PSI to preop CT (optional)</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="applyAlignmentTransformButton">
+           <property name="text">
+            <string>Apply alignment transform</string>
+           </property>
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <widget class="QPushButton" name="prepareSegmentationButton">
@@ -469,6 +613,58 @@ QToolBox::tab:selected {
           <string>3.b Segment intraop PSI</string>
          </property>
         </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="hLayoutExistingSegmentation">
+         <item>
+          <widget class="QLabel" name="labelOrUseExisting">
+           <property name="text">
+            <string>or use existing:</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="qMRMLNodeComboBox" name="psiPostopSegmentationSelector" native="true">
+           <property name="nodeTypes" stdset="0">
+            <stringlist notr="true">
+             <string>vtkMRMLSegmentationNode</string>
+            </stringlist>
+           </property>
+           <property name="showChildNodeTypes" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="addEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="removeEnabled" stdset="0">
+            <bool>false</bool>
+           </property>
+           <property name="noneEnabled" stdset="0">
+            <bool>true</bool>
+           </property>
+           <property name="SlicerParameterName" stdset="0">
+            <string>psiPostopSegmentation</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="psiPostopSegmentComboBox">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="useExistingSegmentationButton">
+           <property name="text">
+            <string>Use selected</string>
+           </property>
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
       </layout>
      </widget>
@@ -505,6 +701,13 @@ QToolBox::tab:selected {
          </property>
          <property name="text">
           <string>4. Align PSIs</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="manualAlignPSIsButton">
+         <property name="text">
+          <string>4b. Manual alignment (no segmentation)</string>
          </property>
         </widget>
        </item>
@@ -923,6 +1126,38 @@ QToolBox::tab:selected {
    <sender>OrbitaPSIWorkflowModule</sender>
    <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
    <receiver>psiDistanceModelSelectorOutput</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>82</x>
+     <y>135</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>220</x>
+     <y>161</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitaPSIWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>psiPostopSegmentationSelector</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>82</x>
+     <y>135</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>220</x>
+     <y>161</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>OrbitaPSIWorkflowModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>preopModelSelector</receiver>
    <slot>setMRMLScene(vtkMRMLScene*)</slot>
    <hints>
     <hint type="sourcelabel">

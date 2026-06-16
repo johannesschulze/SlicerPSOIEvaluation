@@ -28,7 +28,7 @@ from slicer.parameterNodeWrapper import (
     WithinRange,
 )
 
-from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode, vtkMRMLNode, vtkMRMLSegmentationNode
+from slicer import vtkMRMLScalarVolumeNode, vtkMRMLModelNode, vtkMRMLFolderDisplayNode, vtkMRMLNode, vtkMRMLSegmentationNode, vtkMRMLTransformNode
 
 class OrbitaPSIWorkflowModule(ScriptedLoadableModule):
     """Uses ScriptedLoadableModule base class, available at:
@@ -79,6 +79,9 @@ class OrbitaPSIWorkflowModuleParameterNode:
     nccRegistration : float = 0.0
 
     registrationMaskSegmentation : Optional[vtkMRMLSegmentationNode]
+    psiPostopSegmentation : Optional[vtkMRMLSegmentationNode]
+    psiPostopSegmentId : str = ""
+    planToPreopTransform : Optional[vtkMRMLTransformNode]
 
     step : int = 0
 
@@ -97,6 +100,8 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._parameterNodeGuiTag = None
         self._brainsCliNode = None
         self._brainsObserverTag = None
+        self._preopCropROI = None
+        self._postopCropROI = None
 
     def setup(self) -> None:
         """Called when the user opens the module the first time and the widget is initialized."""
@@ -123,12 +128,23 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
         # Buttons
+        self.ui.cropPreopButton.connect("clicked(bool)", self.onCropPreopButton)
+        self.ui.applyCropPreopButton.connect("clicked(bool)", self.onApplyCropPreopButton)
+        self.ui.cropPostopButton.connect("clicked(bool)", self.onCropPostopButton)
+        self.ui.applyCropPostopButton.connect("clicked(bool)", self.onApplyCropPostopButton)
+        self.ui.alignMidlineButton.connect("clicked(bool)", self.onAlignMidlineButton)
         self.ui.prepareSceneButton.connect("clicked(bool)", self.onPrepareSceneButton)
         self.ui.drawRegistrationMaskButton.connect("clicked(bool)", self.onDrawRegistrationMaskButton)
         self.ui.performVolumeRegistrationButton.connect("clicked(bool)", self.onPerformVolumeRegistrationButton)
         self.ui.applyTransformsToPlannedModelButton.connect("clicked(bool)", self.onApplyTransformsToPlannedModelButton)
+        self.ui.applyAlignmentTransformButton.connect("clicked(bool)", self.onApplyAlignmentTransformButton)
         self.ui.prepareSegmentationButton.connect("clicked(bool)", self.onPrepareSegmentationButton)
+        self.ui.useExistingSegmentationButton.connect("clicked(bool)", self.onUseExistingSegmentationButton)
+        self.ui.psiPostopSegmentationSelector.connect("currentNodeChanged(vtkMRMLNode*)", self._onPsiPostopSegmentationChanged)
+        self.ui.psiPostopSegmentComboBox.connect("currentIndexChanged(int)", self._onPsiPostopSegmentComboBoxChanged)
         self.ui.alignPSIsButton.connect("clicked(bool)", self.onAlignPSIsButton)
+        self.ui.manualAlignPSIsButton.connect("clicked(bool)", self.onManualAlignPSIsButton)
+        self.ui.registerToSelectedModelButton.connect("clicked(bool)", self.onRegisterToSelectedModelButton)
         self.ui.calculateM2MDistanceButton.connect("clicked(bool)", self.onCalculateM2MDistanceButton)
         self.ui.printPSIResultsButton.connect("clicked(bool)", self.onPrintPSIResultsButton)
         self.ui.recenterPlanSTLsButton.connect("clicked(bool)", self.onRecenterPlanSTLsButton)
@@ -227,14 +243,61 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.preopVolume and self._parameterNode.postopVolume:
-            self.ui.prepareSceneButton.enabled = True
-        else:
-            self.ui.prepareSceneButton.enabled = False
+        hasPreop = bool(self._parameterNode and self._parameterNode.preopVolume)
+        hasPostop = bool(self._parameterNode and self._parameterNode.postopVolume)
+        self.ui.cropPreopButton.enabled = hasPreop
+        self.ui.applyCropPreopButton.enabled = hasPreop and self._preopCropROI is not None
+        self.ui.cropPostopButton.enabled = hasPostop
+        self.ui.applyCropPostopButton.enabled = hasPostop and self._postopCropROI is not None
+        self.ui.alignMidlineButton.enabled = hasPreop
+        self.ui.prepareSceneButton.enabled = hasPreop and hasPostop
+        self.ui.applyAlignmentTransformButton.enabled = (
+            self._parameterNode is not None and
+            self._parameterNode.planToPreopTransform is not None
+        )
+        hasPostopSeg = self._parameterNode is not None and self._parameterNode.psiPostopSegmentation is not None
+        self.ui.psiPostopSegmentComboBox.enabled = hasPostopSeg
+        self.ui.useExistingSegmentationButton.enabled = hasPostopSeg and bool(
+            self._parameterNode.psiPostopSegmentId
+        )
 
     def onStepsToolboxCurrentChanged(self, currentId) -> None:
         self.logic.getParameterNode().step = currentId
         print(currentId)
+
+    def onCropPreopButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to create crop ROI."), waitCursor=True):
+            if self._preopCropROI is not None:
+                slicer.mrmlScene.RemoveNode(self._preopCropROI)
+            self._preopCropROI = self.logic.createCropROI(self._parameterNode.preopVolume)
+            self._checkCanApply()
+
+    def onApplyCropPreopButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to apply crop."), waitCursor=True):
+            self.logic.applyCrop(self._parameterNode.preopVolume, self._preopCropROI)
+            self._preopCropROI = None
+            self._checkCanApply()
+
+    def onCropPostopButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to create crop ROI."), waitCursor=True):
+            if self._postopCropROI is not None:
+                slicer.mrmlScene.RemoveNode(self._postopCropROI)
+            self._postopCropROI = self.logic.createCropROI(self._parameterNode.postopVolume)
+            self._checkCanApply()
+
+    def onApplyCropPostopButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to apply crop."), waitCursor=True):
+            self.logic.applyCrop(self._parameterNode.postopVolume, self._postopCropROI)
+            self._postopCropROI = None
+            self._checkCanApply()
+
+    def onAlignMidlineButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to align to midline."), waitCursor=True):
+            result = self.logic.computeMidsagittalAlignment(self._parameterNode.preopVolume)
+            if result is None:
+                return
+            centroid, theta = result
+            self.logic.setMidlineTransform(self._parameterNode.preopVolume, centroid, theta)
 
     def onPrepareSceneButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
@@ -272,6 +335,9 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self.ui.performVolumeRegistrationButton.text = "2b. Register CT-Scans (BRAINS)"
         self.ui.brainsProgressBar.setVisible(False)
         if cliNode.GetStatus() == slicer.vtkMRMLCommandLineModuleNode.Completed:
+            maskSeg = self._parameterNode.registrationMaskSegmentation
+            if maskSeg is not None and maskSeg.GetDisplayNode():
+                maskSeg.GetDisplayNode().SetVisibility(False)
             ncc = self.logic.computeRegistrationNCC(
                 self._parameterNode.preopVolume,
                 self._parameterNode.postopVolume
@@ -300,13 +366,52 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
     
     def onApplyTransformsToPlannedModelButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
             self.logic.applyTransformsToPlannedModel()
+            transformNode = slicer.mrmlScene.GetFirstNodeByName("registration plan to preop")
+            if transformNode is None:
+                transformNode = slicer.mrmlScene.GetFirstNodeByName("manual registration plan to preop")
+            self._parameterNode.planToPreopTransform = transformNode
+
+    def onApplyAlignmentTransformButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to apply alignment transform."), waitCursor=True):
+            model = self.ui.psiPlannedModelSelector.currentNode()
+            if model is None:
+                slicer.util.errorDisplay("No model selected.")
+                return
+            self.logic.applyAlignmentTransformToModel(model)
 
     def onPrepareSegmentationButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
-            # Compute output
             self.logic.prepareSegmentation()
+            self._nextStep()
+
+    def _onPsiPostopSegmentationChanged(self, node) -> None:
+        self.ui.psiPostopSegmentComboBox.blockSignals(True)
+        self.ui.psiPostopSegmentComboBox.clear()
+        if node is not None:
+            seg = node.GetSegmentation()
+            for i in range(seg.GetNumberOfSegments()):
+                segId = seg.GetNthSegmentID(i)
+                self.ui.psiPostopSegmentComboBox.addItem(seg.GetSegment(segId).GetName(), segId)
+        self.ui.psiPostopSegmentComboBox.blockSignals(False)
+        # Store ID of the first segment as default, or clear if no segmentation
+        if node is not None and node.GetSegmentation().GetNumberOfSegments() > 0:
+            self._parameterNode.psiPostopSegmentId = node.GetSegmentation().GetNthSegmentID(0)
+        else:
+            self._parameterNode.psiPostopSegmentId = ""
+        self._checkCanApply()
+
+    def _onPsiPostopSegmentComboBoxChanged(self, index) -> None:
+        segId = self.ui.psiPostopSegmentComboBox.itemData(index)
+        if segId and self._parameterNode:
+            self._parameterNode.psiPostopSegmentId = segId
+        self._checkCanApply()
+
+    def onUseExistingSegmentationButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to set segmentation."), waitCursor=True):
+            if self._parameterNode.psiPostopSegmentation is None:
+                slicer.util.errorDisplay("No segmentation selected.")
+                return
             self._nextStep()
     
     def onAlignPSIsButton(self) -> None:
@@ -315,6 +420,23 @@ class OrbitaPSIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             self.logic.alignPSIModels()
             slicer.util.messageBox(f"Registration completed (RMS: {self.logic.getParameterNode().rmsPlanToPostop})")
             self._nextStep()
+
+    def onManualAlignPSIsButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to set up manual alignment."), waitCursor=True):
+            self.logic.manualAlignPSIModel()
+            self._nextStep()
+
+    def onRegisterToSelectedModelButton(self) -> None:
+        with slicer.util.tryWithErrorDisplay(_("Failed to register to selected model."), waitCursor=True):
+            targetModel = self.ui.preopModelSelector.currentNode()
+            if targetModel is None:
+                slicer.util.errorDisplay("No model selected.")
+                return
+            self.logic.alignPlanToPreopToModel(targetModel)
+            transformNode = slicer.mrmlScene.GetFirstNodeByName("registration plan to preop")
+            if transformNode is None:
+                transformNode = slicer.mrmlScene.GetFirstNodeByName("manual registration plan to preop")
+            self._parameterNode.planToPreopTransform = transformNode
 
     def onCalculateM2MDistanceButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
@@ -383,6 +505,110 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     def getParameterNode(self):
         return OrbitaPSIWorkflowModuleParameterNode(super().getParameterNode())
 
+    def createCropROI(self, volume):
+        bounds = [0.0] * 6
+        volume.GetRASBounds(bounds)
+        roiNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode")
+        roiNode.SetName(f"Crop ROI - {volume.GetName()}")
+        center = [(bounds[0]+bounds[1])/2, (bounds[2]+bounds[3])/2, (bounds[4]+bounds[5])/2]
+        size = [bounds[1]-bounds[0], bounds[3]-bounds[2], bounds[5]-bounds[4]]
+        roiNode.SetCenter(center)
+        roiNode.SetSize(size)
+        roiNode.CreateDefaultDisplayNodes()
+        roiNode.GetDisplayNode().SetHandlesInteractive(True)
+        return roiNode
+
+    def applyCrop(self, volume, roiNode):
+        cropParams = slicer.vtkMRMLCropVolumeParametersNode()
+        slicer.mrmlScene.AddNode(cropParams)
+        tempNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode", "__croptemp__")
+        cropParams.SetInputVolumeNodeID(volume.GetID())
+        cropParams.SetOutputVolumeNodeID(tempNode.GetID())
+        cropParams.SetROINodeID(roiNode.GetID())
+        cropParams.SetVoxelBased(True)
+        slicer.modules.cropvolume.logic().Apply(cropParams)
+        slicer.mrmlScene.RemoveNode(cropParams)
+        # Overwrite original volume with cropped data
+        volume.SetAndObserveImageData(tempNode.GetImageData())
+        ijkToRAS = vtk.vtkMatrix4x4()
+        tempNode.GetIJKToRASMatrix(ijkToRAS)
+        volume.SetIJKToRASMatrix(ijkToRAS)
+        volume.StorableModified()
+        volume.Modified()
+        slicer.mrmlScene.RemoveNode(tempNode)
+        slicer.mrmlScene.RemoveNode(roiNode)
+
+    def computeMidsagittalAlignment(self, preopVolume):
+        """Computes the yaw rotation to align the skull midsagittal plane with x=0.
+        Returns (centroid_ras, theta_rad) or None if too few bone voxels found.
+        Does NOT modify the scene — call setMidlineTransform to apply."""
+
+        # Downsample 4× and threshold to cortical bone only.
+        # Upper bound excludes metal artifact blooms (dental implants etc. > 1500 HU).
+        arr = slicer.util.arrayFromVolume(preopVolume)
+        step = 4
+        sub = arr[::step, ::step, ::step]
+        kji = np.argwhere((sub > 400) & (sub < 1500))
+
+        if len(kji) < 100:
+            logging.warning("computeMidsagittalAlignment: too few cortical bone voxels, skipping.")
+            return None
+
+        # Convert downsampled IJK → RAS
+        ijkToRAS = vtk.vtkMatrix4x4()
+        preopVolume.GetIJKToRASMatrix(ijkToRAS)
+        M = np.array([[ijkToRAS.GetElement(r, c) for c in range(4)] for r in range(4)])
+        ijk_h = np.vstack([kji[:, 2] * step, kji[:, 1] * step, kji[:, 0] * step, np.ones(len(kji))])
+        ras = (M @ ijk_h)[:3, :].T  # N × 3
+
+        # 3D PCA; assign eigenvectors to axes by dot product (not eigenvalue rank)
+        centroid = ras.mean(axis=0)
+        _, eigenvectors = np.linalg.eigh(np.cov((ras - centroid).T))
+        abs_dots = np.abs(eigenvectors.T @ np.eye(3))   # [evec, ras_axis]
+        lr_idx = int(np.argmax(abs_dots[:, 0]))          # eigenvector closest to RAS x
+        v_lr = eigenvectors[:, lr_idx]
+        if v_lr[0] < 0:
+            v_lr = -v_lr  # Right = +x
+
+        # Project onto axial plane → yaw-only angle
+        v_lr_xy = np.array([v_lr[0], v_lr[1]])
+        v_lr_xy /= np.linalg.norm(v_lr_xy)
+        theta = -np.arctan2(v_lr_xy[1], v_lr_xy[0])
+
+        return centroid, theta
+
+    def setMidlineTransform(self, preopVolume, centroid, theta_rad):
+        """Creates (or replaces) the 'preop midsagittal alignment' transform node,
+        rotating the preop CT by theta_rad around the skull centroid (yaw only).
+        The transform is NOT hardened, so the spinbox can update it live."""
+
+        cos_t, sin_t = np.cos(theta_rad), np.sin(theta_rad)
+        R = np.array([[cos_t, -sin_t, 0],
+                      [sin_t,  cos_t, 0],
+                      [0,      0,     1]])
+        # Rotate about centroid; also shift centroid x to 0 (midsagittal)
+        t = np.array([0.0, centroid[1], centroid[2]]) - R @ centroid
+
+        mat4 = np.eye(4)
+        mat4[:3, :3] = R
+        mat4[:3, 3] = t
+        vtkMat = vtk.vtkMatrix4x4()
+        for r in range(4):
+            for c in range(4):
+                vtkMat.SetElement(r, c, mat4[r, c])
+
+        # Reuse existing node if present, otherwise create it
+        transformNode = slicer.mrmlScene.GetFirstNodeByName("preop midsagittal alignment")
+        if transformNode is None:
+            transformNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTransformNode")
+            transformNode.SetName("preop midsagittal alignment")
+
+        transformNode.SetMatrixTransformToParent(vtkMat)
+        preopVolume.SetAndObserveTransformNodeID(transformNode.GetID())
+        transformNode.CreateDefaultDisplayNodes()
+        transformNode.GetDisplayNode().SetEditorVisibility(True)
+        helperfunctions.centerTransformToNode(transformNode, preopVolume)
+
     def prepareForRegistration(self, preopVolume, postopVolume):
         pn = self.getParameterNode()
 
@@ -397,7 +623,15 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
                 pn.skullPlannedModel,
                 helperfunctions.MATERIAL_BONE
             )
-        
+
+        # Harden the midsagittal alignment transform into the volume but keep the node
+        # so that planning STLs can later be transformed from the original coordinate system
+        alignTransform = slicer.mrmlScene.GetFirstNodeByName("preop midsagittal alignment")
+        if alignTransform is not None:
+            if alignTransform.GetDisplayNode():
+                alignTransform.GetDisplayNode().SetEditorVisibility(False)
+            preopVolume.HardenTransform()
+
         # display volumes in slice views
         slicer.util.setSliceViewerLayers(foreground=postopVolume, foregroundOpacity=0.5, background=preopVolume)
 
@@ -408,7 +642,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         alignmentTransform = helperfunctions.alignNodesByCenterOfGravity(postopVolume, preopVolume)
         alignmentTransform.CreateDefaultDisplayNodes()
         alignmentTransform.GetDisplayNode().SetEditorVisibility(True)
-        alignmentTransform.SetName("manual registration postop to intraop")
+        alignmentTransform.SetName("manual registration postop to preop")
         
         helperfunctions.setDefault3dView()
         
@@ -449,6 +683,21 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             maskSegNode.GetSegmentation().AddEmptySegment("mask")
             pn.registrationMaskSegmentation = maskSegNode
 
+        # Volume rendering for spatial orientation while drawing the mask
+        helperfunctions.showVolumeRendering(preopVolume, preset="CT-Bone", hideSoftTissue=True, thresholds=[600, 800])
+
+        # Show mask segmentation in 3D at 50% opacity
+        maskSegNode.CreateDefaultDisplayNodes()
+        maskSegNode.CreateClosedSurfaceRepresentation()
+        maskSegNode.GetDisplayNode().SetVisibility3D(True)
+        maskSegNode.GetDisplayNode().SetOpacity3D(0.5)
+
+        # Center slice views and set 3D view to AP (anterior)
+        slicer.util.resetSliceViews()
+        threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()
+        threeDView.rotateToViewAxis(3)  # 3 = Anterior
+        threeDView.resetFocalPoint()
+
         # Switch to Segment Editor
         slicer.util.selectModule("SegmentEditor")
         editor = slicer.modules.SegmentEditorWidget.editor
@@ -465,7 +714,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
     def performVolumeRegistration(self, preopVolume, postopVolume):
         pn = self.getParameterNode()
 
-        slicer.util.getNode("manual registration postop to intraop").GetDisplayNode().SetEditorVisibility(False)
+        slicer.util.getNode("manual registration postop to preop").GetDisplayNode().SetEditorVisibility(False)
 
         transformNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTransformNode")
         transformNode.SetName("registration postop to preop")
@@ -618,6 +867,23 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         return
 
+    def alignPlanToPreopToModel(self, targetModel):
+        """Register skull planned model directly to an already-existing preop model node."""
+        helperfunctions.removeNodesFromSceneByName(["registration plan to preop"])
+
+        sourceToTargetTransform = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLinearTransformNode")
+        sourceToTargetTransform.SetName("registration plan to preop")
+
+        import ModelRegistration
+        mrLogic = ModelRegistration.ModelRegistrationLogic()
+        mrLogic.run(self.getParameterNode().skullPlannedModel, targetModel, sourceToTargetTransform)
+        self.getParameterNode().rmsPlanToPreop = mrLogic.ComputeMeanDistance(
+            self.getParameterNode().skullPlannedModel, targetModel, sourceToTargetTransform
+        )
+
+        self.getParameterNode().skullPlannedModel.SetAndObserveTransformNodeID(sourceToTargetTransform.GetID())
+        helperfunctions.centerTransformToNode(sourceToTargetTransform, targetModel)
+
     # applies the regisrtation transform (plan to preop) for the selected psi
     def applyTransformsToPlannedModel(self):
         pn = self.getParameterNode()
@@ -637,6 +903,21 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             psiPlannedModel.HardenTransform()
         except Exception as e:
             print("No computed registration from plan to preop found. Skipping.", file=sys.stderr)
+
+    def applyAlignmentTransformToModel(self, model):
+        """Applies the plan-to-preop registration transform(s) to the given model and hardens."""
+        try:
+            manual = slicer.util.getNode("manual registration plan to preop")
+            model.SetAndObserveTransformNodeID(manual.GetID())
+            model.HardenTransform()
+        except Exception:
+            pass
+        try:
+            computed = slicer.util.getNode("registration plan to preop")
+            model.SetAndObserveTransformNodeID(computed.GetID())
+            model.HardenTransform()
+        except Exception:
+            pass
 
     # prepares the scene for the segmentation of the intraoperative situation of the selected psi
     def prepareSegmentation(self):
@@ -705,6 +986,8 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         segment = segmentation.GetSegment(segmentId)
         segment.SetColor(helperfunctions.COLOR_POSTOP)
         segment.SetName(psiPlannedModel.GetName() + " postop Segment")
+        pn.psiPostopSegmentation = segmentationNode
+        pn.psiPostopSegmentId = segmentId
      
         # switch to SegmentEditor
         slicer.util.selectModule("SegmentEditor")
@@ -741,10 +1024,23 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         ])
 
         # convert Segmentation to model
-        segmentationNode = slicer.util.getNode(f"{psiPlannedModel.GetName()} postop Segmentation")
+        segmentationNode = self.getParameterNode().psiPostopSegmentation
+        if segmentationNode is None:
+            segmentationNode = slicer.util.getNode(f"{psiPlannedModel.GetName()} postop Segmentation")
         segmentationNode.SetDisplayVisibility(False)
+        seg = segmentationNode.GetSegmentation()
+        segmentId = self.getParameterNode().psiPostopSegmentId or seg.GetNthSegmentID(0)
+        segmentName = seg.GetSegment(segmentId).GetName()
+        # Temporarily hide all other segments so only the selected one is exported
+        dispNode = segmentationNode.GetDisplayNode()
+        savedVisibility = {seg.GetNthSegmentID(i): dispNode.GetSegmentVisibility(seg.GetNthSegmentID(i))
+                           for i in range(seg.GetNumberOfSegments())}
+        for sId in savedVisibility:
+            dispNode.SetSegmentVisibility(sId, sId == segmentId)
         slicer.modules.segmentations.logic().ExportVisibleSegmentsToModels(segmentationNode, 0)
-        psiPostopModel = slicer.util.getNode(f"{psiPlannedModel.GetName()} postop Segment")
+        for sId, vis in savedVisibility.items():
+            dispNode.SetSegmentVisibility(sId, vis)
+        psiPostopModel = slicer.util.getNode(segmentName)
         psiPostopModel.SetName(f"{psiPlannedModel.GetName()} postop model")
         psiPostopModel.GetDisplayNode().SetColor(np.array(helperfunctions.COLOR_POSTOP)*0.7)
 
@@ -757,6 +1053,7 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             hardenTransform=False)
         
         registeredModel.GetDisplayNode().SetColor(helperfunctions.COLOR_POSTOP)
+        registeredModel.GetDisplayNode().SetVisibility2D(True)
         helperfunctions.applyMaterialToModelNode(registeredModel, helperfunctions.MATERIAL_BONE)
         
         self.getParameterNode().rmsPlanToPostop = rms
@@ -768,6 +1065,33 @@ class OrbitaPSIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         alignmentTransform.GetDisplayNode().SetRotationHandleComponentVisibility3D([True, True, True, True])
         helperfunctions.centerTransformToNode(alignmentTransform, registeredModel)
 
+
+    def manualAlignPSIModel(self):
+        psiPlannedModel = self.getParameterNode().psiPlannedModel
+        psiPlannedModel.SetDisplayVisibility(False)
+
+        clonedName = f"{psiPlannedModel.GetName()} registered to postop"
+        helperfunctions.removeNodesFromSceneByName([clonedName])
+
+        clonedModel = helperfunctions.cloneModel(psiPlannedModel, clonedName)
+        clonedModel.GetDisplayNode().SetColor(helperfunctions.COLOR_POSTOP)
+        clonedModel.GetDisplayNode().SetVisibility(True)
+        clonedModel.GetDisplayNode().SetVisibility2D(True)
+        helperfunctions.applyMaterialToModelNode(clonedModel, helperfunctions.MATERIAL_BONE)
+
+        transformName = f"registration {psiPlannedModel.GetName()} to postop"
+        helperfunctions.removeNodesFromSceneByName([transformName])
+        alignmentTransform = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLinearTransformNode")
+        alignmentTransform.SetName(transformName)
+
+        clonedModel.SetAndObserveTransformNodeID(alignmentTransform.GetID())
+
+        alignmentTransform.CreateDefaultDisplayNodes()
+        alignmentTransform.GetDisplayNode().SetEditorVisibility(True)
+        alignmentTransform.GetDisplayNode().SetRotationHandleComponentVisibility3D([True, True, True, True])
+        helperfunctions.centerTransformToNode(alignmentTransform, clonedModel)
+
+        self.getParameterNode().psiPostopModel = clonedModel
 
     def calculatePSIModelToModelDistance(self):
         psiPlannedModel = self.getParameterNode().psiPlannedModel

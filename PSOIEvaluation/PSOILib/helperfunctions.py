@@ -433,8 +433,11 @@ def alignCameraToBoundingBox(boxNode, axis = 0, viewWidget = None):
     :param camera: camera node, defaults to slicer.util.getNode("Camera")
     """
 
-    if (viewWidget == None):
-        viewWidget = slicer.app.layoutManager().threeDWidget(0)
+    if viewWidget is None:
+        lm = slicer.app.layoutManager()
+        if lm is None:
+            return  # headless mode – no 3-D view available
+        viewWidget = lm.threeDWidget(0)
 
     viewNode = viewWidget.mrmlViewNode()
     camera = slicer.modules.cameras.logic().GetViewActiveCameraNode(viewNode)
