@@ -1439,13 +1439,18 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         )
 
     def printAllPSIResults(self):
-        """Iterate every PSI work item, collect per-item results, write a combined CSV."""
+        """Iterate every PSI work item and write a combined CSV with one row per item.
+
+        Columns use the un-prefixed metric names from printResults (e.g.
+        'rms_plan_to_preop' instead of 'my_model_rms_plan_to_preop').
+        A leading 'name' column identifies the work item.
+        """
         pn = self.getParameterNode()
         items = PSIWorkItem.findAll()
         if not items:
             raise Exception("No PSI work items found in the current scene.")
 
-        allResults = {}
+        rows = []          # list of (item_name, result_dict_with_stripped_keys)
         firstOutputPath = None
 
         for item in items:
@@ -1453,27 +1458,39 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             if None in (pn.psiPlannedModel, pn.psiPostopModel, pn.psiDistanceModel):
                 print(f"Skipping '{item.displayName}': not fully analysed yet.", file=sys.stderr)
                 continue
+
+            modelName = pn.psiPlannedModel.GetName()
             result = self.printResults(
-                pn.psiPlannedModel.GetName(),
+                modelName,
                 pn.psiPlannedModel,
                 pn.psiPostopModel,
                 pn.psiDistanceModel,
                 pn.psiPlannedModel,
             )
-            allResults.update(result)
+
+            # Strip the model-name prefix from each key so all rows share the same headers
+            prefix = modelName.replace(" ", "_") + "_"
+            stripped = {
+                (k[len(prefix):] if k.startswith(prefix) else k): v
+                for k, v in result.items()
+            }
+            rows.append((item.displayName, stripped))
+
             if firstOutputPath is None:
                 storage = pn.psiPlannedModel.GetStorageNode()
                 if storage and storage.GetFileName():
                     firstOutputPath = os.path.dirname(storage.GetFileName())
 
-        if not allResults:
+        if not rows:
             raise Exception("No completed work items to export.")
 
+        headers = ["name"] + list(rows[0][1].keys())
         outputFile = os.path.join(firstOutputPath or ".", "output_all_psis.csv")
         with open(outputFile, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(allResults.keys())
-            writer.writerow(allResults.values())
+            writer.writerow(headers)
+            for item_name, result in rows:
+                writer.writerow([item_name] + list(result.values()))
 
         print(f"Combined output written to {outputFile}")
         return outputFile
