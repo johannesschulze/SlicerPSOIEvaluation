@@ -183,6 +183,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         self._preopCropROI = None
         self._postopCropROI = None
         self._workItemComboBox = None
+        self._workItemComboBoxCalculation = None
         self._workItemComboBoxOutput = None
         self._addWorkItemButton = None
         self._removeWorkItemButton = None
@@ -642,6 +643,17 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         self._addWorkItemButton.connect("clicked(bool)", self._onAddWorkItem)
         self._removeWorkItemButton.connect("clicked(bool)", self._onRemoveWorkItem)
 
+        # Step 5: work item selector
+        step5Widget = self.ui.stepsToolbox.widget(5)
+        step5Layout = step5Widget.layout() if step5Widget else None
+
+        self._workItemComboBoxCalculation = qt.QComboBox()
+        self._workItemComboBoxCalculation.setSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Fixed)
+        self._workItemComboBoxCalculation.setToolTip("Switch between PSI / bone-fragment work items")
+        if step5Layout is not None:
+            step5Layout.insertWidget(0, self._workItemComboBoxCalculation)
+        self._workItemComboBoxCalculation.connect("currentIndexChanged(int)", self._onWorkItemComboOutputChanged)
+
         # Step 6: work item selector + output-all button
         step6Widget = self.ui.stepsToolbox.widget(6)
         step6Layout = step6Widget.layout() if step6Widget else None
@@ -668,7 +680,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
 
     def _refreshWorkItemCombo(self, selectNodeId=None):
         """Repopulate all work-item combo boxes from items currently in the scene."""
-        combos = [c for c in (self._workItemComboBox, self._workItemComboBoxOutput) if c is not None]
+        combos = [c for c in (self._workItemComboBox, self._workItemComboBoxCalculation, self._workItemComboBoxOutput) if c is not None]
         if not combos:
             return
         prev = (self._workItemComboBox.itemData(self._workItemComboBox.currentIndex)
@@ -788,8 +800,8 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         item = PSIWorkItem(node)
         self._activeWorkItemNodeId = item.nodeId
 
-        # Sync both work-item combo boxes (blockSignals to avoid re-entering this method)
-        for combo in (self._workItemComboBox, self._workItemComboBoxOutput):
+        # Sync all work-item combo boxes (blockSignals to avoid re-entering this method)
+        for combo in (self._workItemComboBox, self._workItemComboBoxCalculation, self._workItemComboBoxOutput):
             if combo is None:
                 continue
             combo.blockSignals(True)
