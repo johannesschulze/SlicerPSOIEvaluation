@@ -95,7 +95,7 @@ class PSIWorkItem:
         self._setNode(self._DISTANCE, pn.psiDistanceModel)
         self._setNode(self._SEG,      pn.psiPostopSegmentation)
         self._node.SetAttribute(self._SEG_ID, pn.psiPostopSegmentId or "")
-        self._node.SetAttribute(self._RMS, str(pn.rmsPlanToPostop))
+        self._node.SetAttribute(self._RMS, str(pn.rmsPlanToPostop) if pn.rmsPlanToPostop is not None else "")
 
     def loadToParameterNode(self, pn):
         pn.psiPlannedModel       = self._getNode(self._PLANNED)
@@ -104,7 +104,7 @@ class PSIWorkItem:
         pn.psiPostopSegmentation = self._getNode(self._SEG)
         pn.psiPostopSegmentId    = self._node.GetAttribute(self._SEG_ID) or ""
         rms = self._node.GetAttribute(self._RMS)
-        pn.rmsPlanToPostop = float(rms) if rms else 0.0
+        pn.rmsPlanToPostop = float(rms) if rms else None
 
     def remove(self):
         slicer.mrmlScene.RemoveNode(self._node)
@@ -154,8 +154,8 @@ class GeneralPSOIWorkflowModuleParameterNode:
     skullPlannedModel : vtkMRMLModelNode
     #psiPlannedName : str = "orbita_psi"
 
-    rmsPlanToPreop : float
-    rmsPlanToPostop : float
+    rmsPlanToPreop : Optional[float] = None
+    rmsPlanToPostop : Optional[float] = None
     nccRegistration : float = 0.0
 
     registrationMaskSegmentation : Optional[vtkMRMLSegmentationNode]
@@ -183,9 +183,12 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         self._preopCropROI = None
         self._postopCropROI = None
         self._workItemComboBox = None
+        self._workItemComboBoxOutput = None
         self._addWorkItemButton = None
         self._removeWorkItemButton = None
         self._outputAllButton = None
+        self._activeWorkItemNodeId = None
+        self._switching = False
 
     def setup(self) -> None:
         """Called when the user opens the module the first time and the widget is initialized."""
@@ -210,6 +213,8 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         # These connections ensure that we update parameter node when scene is closed
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
+        self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndImportEvent, self.onSceneEndImport)
+        self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndRestoreEvent, self.onSceneEndImport)
 
         # Buttons
         self.ui.openDocumentationButton.connect("clicked(bool)", self.onOpenDocumentationButton)
@@ -266,6 +271,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
         self._setupWorkItemUI()
+        self._refreshWorkItemCombo()
 
     def cleanup(self) -> None:
         """Called when the application closes and the module widget is destroyed."""
@@ -296,6 +302,12 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
 
     def onSceneEndClose(self, caller, event) -> None:
         """Called just after the scene is closed."""
+        if self.parent.isEntered:
+            self.initializeParameterNode()
+            self._refreshWorkItemCombo()
+
+    def onSceneEndImport(self, caller, event) -> None:
+        """Called after a scene is loaded or restored from disk."""
         if self.parent.isEntered:
             self.initializeParameterNode()
             self._refreshWorkItemCombo()
@@ -353,7 +365,6 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
 
     def onStepsToolboxCurrentChanged(self, currentId) -> None:
         self.logic.getParameterNode().step = currentId
-        print(currentId)
 
     def onCropPreopButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to create crop ROI."), waitCursor=True):
@@ -530,6 +541,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
             if not self._ensureActiveWorkItem():
                 return
             self.logic.manualAlignPSIModel()
+            self.logic.getParameterNode().rmsPlanToPostop = None
             self._saveCurrentWorkItem()
             self._nextStep()
 
@@ -564,19 +576,23 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
     def onPlannedModelSelectorChanged(self, node) -> None:
         if (node == None):
             return
-        
-        print(node.GetName())
-        self.ui.psiPlannedModelSelector.setCurrentNodeID(node.GetID())
-        self.ui.psiPlannedModelSelectorCalculation.setCurrentNodeID(node.GetID())
-        self.ui.psiPlannedModelSelectorOutput.setCurrentNodeID(node.GetID())
+    
+        combos = [self.ui.psiPlannedModelSelectorCalculation, self.ui.psiPlannedModelSelector, self.ui.psiPlannedModelSelectorOutput]
+
+        node_id = node.GetID()
+
+        for combo in combos:
+            if (node_id != combo.currentNodeID):
+                combo.blockSignals(True)
+                combo.setCurrentNodeID(node.GetID())
+                combo.blockSignals(False)
 
         return
        
     def onPostopModelSelectorChanged(self, node) -> None:
         if (node == None):
             return
-        
-        print(node.GetName())
+
         self.ui.psiPostopModelSelectorCalculation.setCurrentNodeID(node.GetID())
         self.ui.psiPostopModelSelectorOutput.setCurrentNodeID(node.GetID())
        
@@ -626,9 +642,17 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
         self._addWorkItemButton.connect("clicked(bool)", self._onAddWorkItem)
         self._removeWorkItemButton.connect("clicked(bool)", self._onRemoveWorkItem)
 
-        # Step 6: output-all button
+        # Step 6: work item selector + output-all button
         step6Widget = self.ui.stepsToolbox.widget(6)
         step6Layout = step6Widget.layout() if step6Widget else None
+
+        self._workItemComboBoxOutput = qt.QComboBox()
+        self._workItemComboBoxOutput.setSizePolicy(qt.QSizePolicy.Expanding, qt.QSizePolicy.Fixed)
+        self._workItemComboBoxOutput.setToolTip("Switch between PSI / bone-fragment work items")
+        if step6Layout is not None:
+            step6Layout.insertWidget(0, self._workItemComboBoxOutput)
+        self._workItemComboBoxOutput.connect("currentIndexChanged(int)", self._onWorkItemComboOutputChanged)
+
         self._outputAllButton = qt.QPushButton("6b. Output All Work Items")
         self._outputAllButton.setToolTip(
             "Run Output Results for every work item and write a single combined CSV"
@@ -638,44 +662,63 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
             step6Layout.addWidget(self._outputAllButton)
         self._outputAllButton.connect("clicked(bool)", self._onOutputAllButton)
 
+        # Persist manual model changes made in the output section back to the work item
+        self.ui.psiPostopModelSelectorOutput.connect("currentNodeChanged(vtkMRMLNode*)", self._saveCurrentWorkItem)
+        self.ui.psiDistanceModelSelectorOutput.connect("currentNodeChanged(vtkMRMLNode*)", self._saveCurrentWorkItem)
+
     def _refreshWorkItemCombo(self, selectNodeId=None):
-        """Repopulate the combo box from work items currently in the scene."""
-        if self._workItemComboBox is None:
+        """Repopulate all work-item combo boxes from items currently in the scene."""
+        combos = [c for c in (self._workItemComboBox, self._workItemComboBoxOutput) if c is not None]
+        if not combos:
             return
         prev = (self._workItemComboBox.itemData(self._workItemComboBox.currentIndex)
-                if self._workItemComboBox.count > 0 else None)
-        self._workItemComboBox.blockSignals(True)
-        self._workItemComboBox.clear()
-        for item in PSIWorkItem.findAll():
-            self._workItemComboBox.addItem(item.displayName, item.nodeId)
+                if self._workItemComboBox is not None and self._workItemComboBox.count > 0 else None)
         target = selectNodeId or prev
-        if target:
-            for i in range(self._workItemComboBox.count):
-                if self._workItemComboBox.itemData(i) == target:
-                    self._workItemComboBox.setCurrentIndex(i)
-                    break
-        self._workItemComboBox.blockSignals(False)
-        hasItems = self._workItemComboBox.count > 0
+        items = PSIWorkItem.findAll()
+        for combo in combos:
+            combo.blockSignals(True)
+            combo.clear()
+            for item in items:
+                combo.addItem(item.displayName, item.nodeId)
+            if target:
+                for i in range(combo.count):
+                    if combo.itemData(i) == target:
+                        combo.setCurrentIndex(i)
+                        break
+            combo.blockSignals(False)
+        # Update tracked active item to match the (possibly new) current combo selection
+        self._activeWorkItemNodeId = (
+            self._workItemComboBox.itemData(self._workItemComboBox.currentIndex)
+            if self._workItemComboBox is not None and self._workItemComboBox.count > 0 else None
+        )
+        hasItems = bool(items)
         if self._removeWorkItemButton:
             self._removeWorkItemButton.enabled = hasItems
         if self._outputAllButton:
             self._outputAllButton.enabled = hasItems
+        # Load the active item into the parameter node so the pn always reflects what
+        # the combo shows (critical after scene load, module reload, or item creation).
+        if self._activeWorkItemNodeId and self._parameterNode:
+            node = slicer.mrmlScene.GetNodeByID(self._activeWorkItemNodeId)
+            if node:
+                self._loadWorkItemIntoUI(PSIWorkItem(node))
 
     def _activeWorkItem(self):
-        """Return the PSIWorkItem currently selected in the combo, or None."""
-        if self._workItemComboBox is None or self._workItemComboBox.count == 0:
+        """Return the PSIWorkItem currently active (tracked by _activeWorkItemNodeId)."""
+        if not self._activeWorkItemNodeId:
             return None
-        nodeId = self._workItemComboBox.itemData(self._workItemComboBox.currentIndex)
-        if not nodeId:
-            return None
-        node = slicer.mrmlScene.GetNodeByID(nodeId)
+        node = slicer.mrmlScene.GetNodeByID(self._activeWorkItemNodeId)
         return PSIWorkItem(node) if node else None
 
-    def _saveCurrentWorkItem(self):
-        """Persist current parameter-node PSI state into the active work item."""
-        item = self._activeWorkItem()
-        if item and self._parameterNode:
-            item.saveFromParameterNode(self._parameterNode)
+    def _saveCurrentWorkItem(self, *_args):
+        """Persist current parameter-node PSI state into the tracked active work item.
+        Accepts *_args so it can be connected directly to Qt signals that pass arguments."""
+        if self._switching:
+            return
+        if self._activeWorkItemNodeId and self._parameterNode:
+            node = slicer.mrmlScene.GetNodeByID(self._activeWorkItemNodeId)
+            if node:
+                PSIWorkItem(node).saveFromParameterNode(self._parameterNode)
 
     def _ensureActiveWorkItem(self):
         """Ensure a work item exists for the current planned model, creating one if needed.
@@ -696,28 +739,81 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
                         self._workItemComboBox.blockSignals(True)
                         self._workItemComboBox.setCurrentIndex(i)
                         self._workItemComboBox.blockSignals(False)
+                        self._activeWorkItemNodeId = existing.nodeId
                     break
             return True
         # Create a new work item for this model
         self._saveCurrentWorkItem()
         item = PSIWorkItem.create(model)
+        self._activeWorkItemNodeId = item.nodeId
         self._refreshWorkItemCombo(selectNodeId=item.nodeId)
         return True
 
-    def _onWorkItemComboChanged(self, index):
-        """Switch to the work item selected in the combo."""
+    def _loadWorkItemIntoUI(self, item):
+        """Load a work item's state into the parameter node and update all dependent UI selectors.
+        Saves are suppressed during this call via the _switching guard."""
         if self._parameterNode is None:
             return
-        self._saveCurrentWorkItem()
-        item = self._activeWorkItem()
-        if item:
+        self._switching = True
+        try:
             item.loadToParameterNode(self._parameterNode)
-            model = self._parameterNode.psiPlannedModel
+            pn = self._parameterNode
+
+            model = pn.psiPlannedModel
             if model:
                 modelId = model.GetID()
                 self.ui.psiPlannedModelSelector.setCurrentNodeID(modelId)
                 self.ui.psiPlannedModelSelectorCalculation.setCurrentNodeID(modelId)
                 self.ui.psiPlannedModelSelectorOutput.setCurrentNodeID(modelId)
+
+            postop = pn.psiPostopModel
+            postopId = postop.GetID() if postop else ""
+            self.ui.psiPostopModelSelectorCalculation.setCurrentNodeID(postopId)
+            self.ui.psiPostopModelSelectorOutput.setCurrentNodeID(postopId)
+
+            distance = pn.psiDistanceModel
+            distanceId = distance.GetID() if distance else ""
+            self.ui.psiDistanceModelSelectorOutput.setCurrentNodeID(distanceId)
+        finally:
+            self._switching = False
+
+    def _switchToWorkItemNodeId(self, nodeId):
+        """Core work-item switch: save previous, load new, update all UI."""
+        if self._parameterNode is None:
+            return
+        self._saveCurrentWorkItem()
+        node = slicer.mrmlScene.GetNodeByID(nodeId) if nodeId else None
+        if node is None:
+            return
+        item = PSIWorkItem(node)
+        self._activeWorkItemNodeId = item.nodeId
+
+        # Sync both work-item combo boxes (blockSignals to avoid re-entering this method)
+        for combo in (self._workItemComboBox, self._workItemComboBoxOutput):
+            if combo is None:
+                continue
+            combo.blockSignals(True)
+            for i in range(combo.count):
+                if combo.itemData(i) == nodeId:
+                    combo.setCurrentIndex(i)
+                    break
+            combo.blockSignals(False)
+
+        self._loadWorkItemIntoUI(item)
+
+    def _onWorkItemComboChanged(self, index):
+        """Switch triggered from the step-3 combo."""
+        if self._workItemComboBox is None:
+            return
+        nodeId = self._workItemComboBox.itemData(index)
+        self._switchToWorkItemNodeId(nodeId)
+
+    def _onWorkItemComboOutputChanged(self, index):
+        """Switch triggered from the step-6 combo."""
+        if self._workItemComboBoxOutput is None:
+            return
+        nodeId = self._workItemComboBoxOutput.itemData(index)
+        self._switchToWorkItemNodeId(nodeId)
 
     def _onAddWorkItem(self):
         """Explicitly create a work item for the currently selected planned model."""
@@ -999,6 +1095,8 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         if effect:
             effect.setParameter("Operation", "FillInside")
             effect.setParameter("Shape", "FreeForm")
+        
+        slicer.util.getNode("manual registration postop to preop").GetDisplayNode().SetEditorVisibility(False)
 
     def performVolumeRegistration(self, preopVolume, postopVolume):
         pn = self.getParameterNode()
@@ -1533,8 +1631,9 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         segmentationPostop	= helperfunctions.convertModelToSegmentation(nodePostop)
         diceAndHausdorff	= helperfunctions.getDiceAndHausdorff(segmentationPlanned, segmentationPostop)
         
-        resultsTableRow[f'{prefix}_rms_plan_to_preop'] = self.getParameterNode().rmsPlanToPreop
-        resultsTableRow[f'{prefix}_rms_plan_to_postop'] = self.getParameterNode().rmsPlanToPostop
+        pn = self.getParameterNode()
+        resultsTableRow[f'{prefix}_rms_plan_to_preop'] = pn.rmsPlanToPreop if pn.rmsPlanToPreop is not None else ""
+        resultsTableRow[f'{prefix}_rms_plan_to_postop'] = pn.rmsPlanToPostop if pn.rmsPlanToPostop is not None else ""
 
         resultsTableRow[f'{prefix}_dice_plan_intraop'] = diceAndHausdorff['dice']
         resultsTableRow[f'{prefix}_hausdorff_avg_planned_postop'] = diceAndHausdorff['avgHausdorffDistance']
@@ -1576,7 +1675,10 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         resultsTableRow['registration_ncc'] = self.getParameterNode().nccRegistration
         
         for key, value in resultsTableRow.items():
-            print(f"{key[0:30]: <30}: {value:.3f}") 
+            if (value == ""):
+                print(f"{key[0:30]: <30}: None")
+            else:
+                print(f"{key[0:30]: <30}: {value:.3f}") 
 
         # print(*[f"{x[0:16]: ^16}" for x in resultsTableRow.keys()])
         # print(*[f"{x: ^16.3f}" for x in resultsTableRow.values()])
