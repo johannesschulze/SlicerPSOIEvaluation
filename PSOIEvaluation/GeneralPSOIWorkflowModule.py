@@ -1564,18 +1564,30 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         firstOutputPath = None
 
         for item in items:
-            item.loadToParameterNode(pn)
-            if None in (pn.psiPlannedModel, pn.psiPostopModel, pn.psiDistanceModel):
+            # Read model nodes directly from the work-item MRML node to avoid
+            # going through loadToParameterNode, which would modify the shared
+            # parameter node, trigger connectGui cascades, and corrupt other
+            # work items via the _saveCurrentWorkItem signal connections.
+            plannedModel  = item._getNode(item._PLANNED)
+            postopModel   = item._getNode(item._POSTOP)
+            distanceModel = item._getNode(item._DISTANCE)
+
+            if None in (plannedModel, postopModel, distanceModel):
                 print(f"Skipping '{item.displayName}': not fully analysed yet.", file=sys.stderr)
                 continue
 
-            modelName = pn.psiPlannedModel.GetName()
+            # Only update the per-item RMS (a float — no UI selector binding that
+            # could trigger saves); global pn fields (ncc, rmsPlanToPreop) are reused.
+            rmsRaw = item._node.GetAttribute(item._RMS)
+            pn.rmsPlanToPostop = float(rmsRaw) if rmsRaw else None
+
+            modelName = plannedModel.GetName()
             result = self.printResults(
                 modelName,
-                pn.psiPlannedModel,
-                pn.psiPostopModel,
-                pn.psiDistanceModel,
-                pn.psiPlannedModel,
+                plannedModel,
+                postopModel,
+                distanceModel,
+                plannedModel,
             )
 
             # Strip the model-name prefix from each key so all rows share the same headers
@@ -1587,7 +1599,7 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
             rows.append((item.displayName, stripped))
 
             if firstOutputPath is None:
-                storage = pn.psiPlannedModel.GetStorageNode()
+                storage = plannedModel.GetStorageNode()
                 if storage and storage.GetFileName():
                     firstOutputPath = os.path.dirname(storage.GetFileName())
 
