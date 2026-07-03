@@ -752,6 +752,7 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
                         self._workItemComboBox.setCurrentIndex(i)
                         self._workItemComboBox.blockSignals(False)
                         self._activeWorkItemNodeId = existing.nodeId
+                        self._loadWorkItemIntoUI(existing)
                     break
             return True
         # Create a new work item for this model
