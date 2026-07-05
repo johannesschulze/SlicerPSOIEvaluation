@@ -404,19 +404,18 @@ def showVolumeRendering(
     :returns Display Node of the Volume Rendering
     """
     volRenLogic = slicer.modules.volumerendering.logic()
-    displayNode = volRenLogic.CreateDefaultVolumeRenderingNodes(volumeNode)
-    scalarRange = volumeNode.GetImageData().GetScalarRange()
+    displayNode = volRenLogic.GetFirstVolumeRenderingDisplayNode(volumeNode)
 
-    displayNode.GetVolumePropertyNode().Copy(volRenLogic.GetPresetByName(preset))
+    if displayNode is None:
+        displayNode = volRenLogic.CreateDefaultVolumeRenderingNodes(volumeNode)
+        displayNode.GetVolumePropertyNode().Copy(volRenLogic.GetPresetByName(preset))
 
-    if (hideSoftTissue):
-        # Set up gradient vs opacity transfer function
-        gradientOpacityTransferFunction = displayNode.GetVolumePropertyNode().GetVolumeProperty().GetScalarOpacity()
-        gradientOpacityTransferFunction.RemoveAllPoints()
-        gradientOpacityTransferFunction.AddPoint(thresholds[0],0.0)
-        gradientOpacityTransferFunction.AddPoint(thresholds[1],1.0)
+        if hideSoftTissue:
+            gradientOpacityTransferFunction = displayNode.GetVolumePropertyNode().GetVolumeProperty().GetScalarOpacity()
+            gradientOpacityTransferFunction.RemoveAllPoints()
+            gradientOpacityTransferFunction.AddPoint(thresholds[0], 0.0)
+            gradientOpacityTransferFunction.AddPoint(thresholds[1], 1.0)
 
-    # Show volume rendering
     displayNode.SetVisibility(True)
     displayNode.SetVisibility3D(True)
 

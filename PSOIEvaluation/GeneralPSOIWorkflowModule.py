@@ -400,6 +400,18 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
                 return
             centroid, theta = result
             self.logic.setMidlineTransform(self._parameterNode.preopVolume, centroid, theta)
+            for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+                node = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+                dn = node.GetDisplayNode()
+                if dn:
+                    dn.SetVisibility(False)
+            helperfunctions.showVolumeRendering(
+                self._parameterNode.preopVolume,
+                preset="CT-Bone", hideSoftTissue=True, thresholds=[600, 800]
+            )
+            threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()
+            threeDView.resetFocalPoint()
+            threeDView.lookFromAxis(5)
 
     def onPrepareSceneButton(self) -> None:
         with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
@@ -445,6 +457,13 @@ class GeneralPSOIWorkflowModuleWidget(ScriptedLoadableModuleWidget, VTKObservati
                 self._parameterNode.postopVolume
             )
             print(f"Registration NCC: {ncc:.4f}")
+            preopId = self._parameterNode.preopVolume.GetID()
+            postopId = self._parameterNode.postopVolume.GetID()
+            for sliceViewName in slicer.app.layoutManager().sliceViewNames():
+                compositeNode = slicer.app.layoutManager().sliceWidget(sliceViewName).mrmlSliceCompositeNode()
+                compositeNode.SetBackgroundVolumeID(preopId)
+                compositeNode.SetForegroundVolumeID(postopId)
+                compositeNode.SetForegroundOpacity(0.5)
             self._nextStep()
         else:
             slicer.util.errorDisplay("Registrierung fehlgeschlagen. Bitte Konsolenausgabe prüfen.")
@@ -1004,7 +1023,9 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         transformNode.SetMatrixTransformToParent(vtkMat)
         preopVolume.SetAndObserveTransformNodeID(transformNode.GetID())
         transformNode.CreateDefaultDisplayNodes()
-        transformNode.GetDisplayNode().SetEditorVisibility(True)
+        dn = transformNode.GetDisplayNode()
+        dn.SetEditorVisibility(True)
+        dn.SetRotationHandleComponentVisibility3D([True, True, True, True])
         helperfunctions.centerTransformToNode(transformNode, preopVolume)
 
     def prepareForRegistration(self, preopVolume, postopVolume):
@@ -1349,10 +1370,12 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
         preopVolume.SetDisplayVisibility(False)
         postopVolume.SetDisplayVisibility(False)
-        psiPlannedModel.SetDisplayVisibility(True)
 
-        if (skullPlannedModel != None):
-            skullPlannedModel.SetDisplayVisibility(False)
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            node = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+            dn = node.GetDisplayNode()
+            if dn:
+                dn.SetVisibility(False)
         
         try:
             preopSegmentation = slicer.util.getNode(preopVolume.GetName() + " segmentation")
@@ -1414,6 +1437,14 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         # show 3D representation of the segmentation
         segmentationNode.CreateClosedSurfaceRepresentation()
         slicer.modules.SegmentEditorWidget.editor.setActiveEffectByName("Scissors")
+        slicer.util.selectModule("SegmentEditor")
+        effect = slicer.modules.SegmentEditorWidget.editor.activeEffect()
+        if effect:
+            effect.setParameter("Operation", "EraseInside")
+
+        threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()
+        threeDView.resetFocalPoint()
+        threeDView.lookFromAxis(5)
 
 
     def alignPSIModels(self):
