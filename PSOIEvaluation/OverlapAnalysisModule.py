@@ -317,6 +317,9 @@ class OverlapAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             )
         segIdA, segIdB = allIds
 
+        segmentation.GetSegment(segIdA).SetColor(0.4, 0.7, 1.0)   # blue
+        segmentation.GetSegment(segIdB).SetColor(1.0, 0.6, 0.2)   # orange
+
         segEditorWidget = slicer.modules.segmenteditor.widgetRepresentation().self().editor
         segEditorWidget.setSegmentationNode(segNode)
         segEditorWidget.setSourceVolumeNode(referenceVolumeNode)
