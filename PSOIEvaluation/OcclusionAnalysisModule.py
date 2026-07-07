@@ -41,6 +41,11 @@ DEFAULT_TAU          = 0.05
 DEFAULT_N_SECTORS    = 6
 DEFAULT_MIN_AREA     = 0.1   # mm²
 
+# Occlusion map display settings (match "Model to Model Distance" defaults used in QC)
+OCCMAP_SCALAR_RANGE = (0.0, 0.1)   # mm  – display range mapped to color
+OCCMAP_THRESHOLD    = (-0.2, 0.2)  # mm  – hide points outside this range
+OCCMAP_Z_OFFSET     = 0.1          # mm  – shift along Z to avoid z-fighting
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Timepoint persistence (one vtkMRMLScriptedModuleNode per timepoint)
@@ -229,7 +234,15 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         )
         settingsLayout.addRow("Min. contact area:", self._minAreaSpinBox)
 
-        # ── Run ───────────────────────────────────────────────────────────
+        # ── Buttons ───────────────────────────────────────────────────────
+        self._mapButton = qt.QPushButton("Create occlusion maps")
+        self._mapButton.setStyleSheet("padding: 6px;")
+        self._mapButton.setToolTip(
+            "For each timepoint: compute lower→upper signed distance, create a "
+            "colorized model node (scalar range 0–0.1 mm, threshold ±0.2 mm)."
+        )
+        self.layout.addWidget(self._mapButton)
+
         self._runButton = qt.QPushButton("Run analysis")
         self._runButton.setStyleSheet("font-weight: bold; padding: 6px;")
         self.layout.addWidget(self._runButton)
@@ -238,6 +251,7 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
 
         # ── Connections ───────────────────────────────────────────────────
         self._addTimepointButton.connect("clicked(bool)", self._onAddTimepointClicked)
+        self._mapButton.connect("clicked(bool)", self._onMapClicked)
         self._runButton.connect("clicked(bool)", self._onRunClicked)
         self._primaryTauSpinBox.connect("valueChanged(double)", self._onSettingChanged)
         self._nSectorsSpinBox.connect("valueChanged(int)", self._onSettingChanged)
@@ -392,7 +406,22 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         for i, r in enumerate(self._timepointRows):
             r["tp"].order = i
 
-    # ── Run ───────────────────────────────────────────────────────────────
+    # ── Map / Run ─────────────────────────────────────────────────────────
+
+    def _onMapClicked(self):
+        timepoints = [r["tp"] for r in self._timepointRows]
+        if not timepoints:
+            slicer.util.errorDisplay("Add at least one timepoint first.")
+            return
+        for r in self._timepointRows:
+            tp = r["tp"]
+            if tp.upperModel is None or tp.lowerModel is None:
+                slicer.util.errorDisplay(
+                    f"Timepoint '{tp.label}': upper and lower arch mesh must both be selected."
+                )
+                return
+        with slicer.util.tryWithErrorDisplay(_("Occlusion map creation failed."), waitCursor=True):
+            self.logic.createOcclusionMaps(timepoints)
 
     def _onRunClicked(self):
         timepoints = [r["tp"] for r in self._timepointRows]
@@ -426,6 +455,105 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
 
     def getParameterNode(self):
         return OcclusionAnalysisModuleParameterNode(super().getParameterNode())
+
+    # ── Occlusion maps ───────────────────────────────────────────────────────
+
+    def createOcclusionMaps(self, timepoints,
+                            scalarRange=OCCMAP_SCALAR_RANGE,
+                            thresholdRange=OCCMAP_THRESHOLD,
+                            zOffset=OCCMAP_Z_OFFSET):
+        """
+        For each timepoint: create a signed distance map for both the lower
+        mesh (source→upper, Z shift +zOffset) and the upper mesh
+        (source→lower, Z shift -zOffset so it moves away from the upper jaw).
+        """
+        print("\n=== Creating occlusion maps ===")
+        for tp in timepoints:
+            lower_poly = self._getTriangulated(tp.lowerModel)
+            upper_poly = self._getTriangulated(tp.upperModel)
+            self._createSingleOcclusionMap(
+                source_poly=lower_poly,
+                target_poly=self._ensureOutwardNormals(upper_poly),
+                source_model=tp.lowerModel,
+                zOffset=+zOffset,
+                scalarRange=scalarRange,
+                thresholdRange=thresholdRange,
+            )
+            self._createSingleOcclusionMap(
+                source_poly=upper_poly,
+                target_poly=self._ensureOutwardNormals(lower_poly),
+                source_model=tp.upperModel,
+                zOffset=-zOffset,
+                scalarRange=scalarRange,
+                thresholdRange=thresholdRange,
+            )
+        print(f"Done. {len(timepoints) * 2} occlusion map(s) in scene.")
+
+    def _createSingleOcclusionMap(self, source_poly, target_poly, source_model,
+                                   zOffset, scalarRange, thresholdRange):
+        dist = vtk.vtkDistancePolyDataFilter()
+        dist.SetInputData(0, source_poly)
+        dist.SetInputData(1, target_poly)
+        dist.SignedDistanceOn()
+        dist.ComputeSecondDistanceOff()
+        dist.Update()
+
+        # Force "Distance" as the active POINT scalar so the display node
+        # uses Gouraud (smooth) shading instead of flat per-cell shading.
+        distPoly = dist.GetOutput()
+        if distPoly.GetPointData().GetArray("Distance") is not None:
+            distPoly.GetPointData().SetActiveScalars("Distance")
+
+        xfm = vtk.vtkTransform()
+        xfm.Translate(0.0, 0.0, zOffset)
+        shifted = vtk.vtkTransformPolyDataFilter()
+        shifted.SetInputData(distPoly)
+        shifted.SetTransform(xfm)
+        shifted.Update()
+
+        nodeName = f"{source_model.GetName()}_distance"
+        mapNode = slicer.mrmlScene.GetFirstNodeByName(nodeName)
+        if mapNode is None:
+            mapNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", nodeName)
+        mapNode.SetAndObservePolyData(shifted.GetOutput())
+        mapNode.CreateDefaultDisplayNodes()
+
+        # Find HotToColdRainbow color node (falls back to Rainbow if missing)
+        colorNode = slicer.mrmlScene.GetFirstNodeByName("HotToColdRainbow")
+        colorNodeID = colorNode.GetID() if colorNode else "vtkMRMLColorTableNodeRainbow"
+
+        dn = mapNode.GetDisplayNode()
+        dn.SetScalarVisibility(True)
+        dn.SetActiveScalarName("Distance")
+        dn.SetActiveAttributeLocation(0)   # 0 = POINT_DATA → smooth interpolation
+        dn.SetScalarRangeFlag(slicer.vtkMRMLDisplayNode.UseManualScalarRange)
+        dn.SetScalarRange(*scalarRange)
+        dn.SetThresholdEnabled(True)
+        dn.SetThresholdRange(*thresholdRange)
+        dn.SetAndObserveColorNodeID(colorNodeID)
+
+        # Place next to the source model in the subject hierarchy
+        shNode = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+        sourceItem = shNode.GetItemByDataNode(source_model)
+        mapItem    = shNode.GetItemByDataNode(mapNode)
+        shNode.SetItemParent(mapItem, shNode.GetItemParent(sourceItem))
+
+        # Color legend (looked up by name so we can reuse it on re-runs)
+        clNode = slicer.mrmlScene.GetFirstNodeByName(f"{nodeName} color legend")
+        if clNode is None:
+            clNode = slicer.modules.colors.logic().AddDefaultColorLegendDisplayNode(mapNode)
+        
+        clNode.SetVisibility(True)
+        clNode.SetTitleText("")
+        clNode.SetLabelFormat("%.2f")
+        clNode.SetSize(.08,.8)
+        clNode.SetPosition(.9,.5)
+
+        clNode.GetLabelTextProperty().SetColor(0,0,0)
+        clNode.GetLabelTextProperty().SetShadow(False)
+        clNode.GetLabelTextProperty().SetFontFamilyToArial()
+
+        print(f"  {nodeName}: distance map created (Z offset {zOffset:+.2f} mm).")
 
     # ── Main entry point ─────────────────────────────────────────────────────
 
