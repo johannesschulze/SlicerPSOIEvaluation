@@ -1501,8 +1501,14 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
 
 
     def manualAlignPSIModel(self):
-        psiPlannedModel = self.getParameterNode().psiPlannedModel
-        psiPlannedModel.SetDisplayVisibility(False)
+        pn = self.getParameterNode()
+        psiPlannedModel = pn.psiPlannedModel
+
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            node = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+            dn = node.GetDisplayNode()
+            if dn:
+                dn.SetVisibility(False)
 
         clonedName = f"{psiPlannedModel.GetName()} registered to postop"
         helperfunctions.removeNodesFromSceneByName([clonedName])
@@ -1525,7 +1531,19 @@ class GeneralPSOIWorkflowModuleLogic(ScriptedLoadableModuleLogic):
         alignmentTransform.GetDisplayNode().SetRotationHandleComponentVisibility3D([True, True, True, True])
         helperfunctions.centerTransformToNode(alignmentTransform, clonedModel)
 
-        self.getParameterNode().psiPostopModel = clonedModel
+        pn.psiPostopModel = clonedModel
+
+        slicer.util.setSliceViewerLayers(background=pn.postopVolume, foreground=None)
+
+        bounds = [0] * 6
+        clonedModel.GetRASBounds(bounds)
+        center = [(bounds[0]+bounds[1])/2, (bounds[2]+bounds[3])/2, (bounds[4]+bounds[5])/2]
+        for sliceViewName in slicer.app.layoutManager().sliceViewNames():
+            sliceWidget = slicer.app.layoutManager().sliceWidget(sliceViewName)
+            sliceWidget.mrmlSliceNode().JumpSliceByCentering(*center)
+
+        threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()
+        threeDView.resetFocalPoint()
 
     def calculatePSIModelToModelDistance(self):
         psiPlannedModel = self.getParameterNode().psiPlannedModel
