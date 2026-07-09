@@ -43,7 +43,7 @@ DEFAULT_MIN_AREA     = 0.1   # mm²
 
 # Occlusion map display settings (match "Model to Model Distance" defaults used in QC)
 OCCMAP_SCALAR_RANGE = (0.0, 0.1)   # mm  – display range mapped to color
-OCCMAP_THRESHOLD    = (-0.2, 0.2)  # mm  – hide points outside this range
+OCCMAP_THRESHOLD    = (0.0, 0.2)   # mm  – hide points outside this range (unsigned)
 OCCMAP_Z_OFFSET     = 0.1          # mm  – shift along Z to avoid z-fighting
 
 
@@ -158,9 +158,16 @@ class OcclusionAnalysisModule(ScriptedLoadableModule):
 
 @parameterNodeWrapper
 class OcclusionAnalysisModuleParameterNode:
-    primaryTau : float = DEFAULT_TAU
-    nSectors   : int   = DEFAULT_N_SECTORS
-    minArea    : float = DEFAULT_MIN_AREA
+    primaryTau        : float = DEFAULT_TAU
+    nSectors          : int   = DEFAULT_N_SECTORS
+    minArea           : float = DEFAULT_MIN_AREA
+    screenshotDir     : str   = ""
+    screenshotSize    : int   = 1000
+    showColorLegend   : bool  = True
+    normalizeZoom     : bool  = True
+    takeOcclusalViews : bool  = True
+    takeButterflyView : bool  = True
+    takeLateralViews  : bool  = False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -234,6 +241,104 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         )
         settingsLayout.addRow("Min. contact area:", self._minAreaSpinBox)
 
+        # ── Orientation & Registration ────────────────────────────────────
+        orientGroup = ctk.ctkCollapsibleButton()
+        orientGroup.text = "Orientation & Registration"
+        orientGroup.collapsed = True
+        self.layout.addWidget(orientGroup)
+        orientLayout = qt.QVBoxLayout(orientGroup)
+
+        self._orientT0Button = qt.QPushButton("Orient T0 interactively")
+        self._orientT0Button.setToolTip(
+            "Attach an interactive transform to the T0 upper and lower jaw models. "
+            "Use the 3D-view handles to rotate/translate, then click 'Confirm'."
+        )
+        orientLayout.addWidget(self._orientT0Button)
+
+        self._confirmOrientButton = qt.QPushButton("Confirm T0 orientation")
+        self._confirmOrientButton.setToolTip(
+            "Harden the interactive transform into the T0 mesh coordinates and "
+            "remove the transform node."
+        )
+        orientLayout.addWidget(self._confirmOrientButton)
+
+        self._registerButton = qt.QPushButton("Register T1, T2, … to T0 (ICP)")
+        self._registerButton.setToolTip(
+            "Rigid ICP registration of each Ti upper jaw to T0 upper jaw. "
+            "The same transform is applied to the corresponding lower jaw. "
+            "T0 must already be in the desired orientation."
+        )
+        orientLayout.addWidget(self._registerButton)
+
+        # ── Screenshots ───────────────────────────────────────────────────
+        screenshotGroup = ctk.ctkCollapsibleButton()
+        screenshotGroup.text = "Screenshots"
+        screenshotGroup.collapsed = True
+        self.layout.addWidget(screenshotGroup)
+        screenshotLayout = qt.QFormLayout(screenshotGroup)
+
+        self._screenshotDirSelector = ctk.ctkPathLineEdit()
+        self._screenshotDirSelector.filters = ctk.ctkPathLineEdit.Dirs
+        self._screenshotDirSelector.setToolTip("Folder to save screenshots into.")
+        screenshotLayout.addRow("Output folder:", self._screenshotDirSelector)
+
+        screenshotLayout.addRow(qt.QLabel("Views to capture:"))
+
+        self._occlusalViewsCheckBox = qt.QCheckBox("Occlusal (upper inferior / lower superior)")
+        self._occlusalViewsCheckBox.setChecked(True)
+        self._occlusalViewsCheckBox.setToolTip(
+            "Upper jaw from inferior view + lower jaw from superior view."
+        )
+        screenshotLayout.addRow("", self._occlusalViewsCheckBox)
+
+        self._butterflyViewCheckBox = qt.QCheckBox("Butterfly (combined occlusal)")
+        self._butterflyViewCheckBox.setChecked(True)
+        self._butterflyViewCheckBox.setToolTip(
+            "Combined image: lower jaw rotated 180° around the LR axis posterior "
+            "to the upper jaw, placed below the upper jaw."
+        )
+        screenshotLayout.addRow("", self._butterflyViewCheckBox)
+
+        self._lateralViewsCheckBox = qt.QCheckBox(
+            "Buccal (anterior, posterior, left, right, oblique left, oblique right)"
+        )
+        self._lateralViewsCheckBox.setChecked(False)
+        self._lateralViewsCheckBox.setToolTip(
+            "Six buccal views showing both jaws in occlusion."
+        )
+        screenshotLayout.addRow("", self._lateralViewsCheckBox)
+
+        self._screenshotSizeSpinBox = qt.QSpinBox()
+        self._screenshotSizeSpinBox.setMinimum(100)
+        self._screenshotSizeSpinBox.setMaximum(4000)
+        self._screenshotSizeSpinBox.setSingleStep(100)
+        self._screenshotSizeSpinBox.setSuffix(" px")
+        self._screenshotSizeSpinBox.setValue(500)
+        self._screenshotSizeSpinBox.setToolTip("Width and height of each output PNG.")
+        screenshotLayout.addRow("Resolution:", self._screenshotSizeSpinBox)
+
+        self._showColorLegendCheckBox = qt.QCheckBox("Show color legend")
+        self._showColorLegendCheckBox.setChecked(True)
+        self._showColorLegendCheckBox.setToolTip(
+            "Include the distance color legend in each screenshot."
+        )
+        screenshotLayout.addRow("", self._showColorLegendCheckBox)
+
+        self._normalizeZoomCheckBox = qt.QCheckBox("Normalize zoom within groups")
+        self._normalizeZoomCheckBox.setChecked(True)
+        self._normalizeZoomCheckBox.setToolTip(
+            "Use the same zoom level across all timepoints for each view group "
+            "(occlusal, butterfly, lateral), so screenshots are directly comparable."
+        )
+        screenshotLayout.addRow("", self._normalizeZoomCheckBox)
+
+        self._screenshotButton = qt.QPushButton("Take screenshots")
+        self._screenshotButton.setToolTip(
+            "For each timepoint: upper jaw (inferior view) + lower jaw (superior "
+            "view, rolled 180°), transparent PNG background."
+        )
+        screenshotLayout.addRow(self._screenshotButton)
+
         # ── Buttons ───────────────────────────────────────────────────────
         self._mapButton = qt.QPushButton("Create occlusion maps")
         self._mapButton.setStyleSheet("padding: 6px;")
@@ -251,6 +356,17 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
 
         # ── Connections ───────────────────────────────────────────────────
         self._addTimepointButton.connect("clicked(bool)", self._onAddTimepointClicked)
+        self._orientT0Button.connect("clicked(bool)", self._onOrientT0Clicked)
+        self._confirmOrientButton.connect("clicked(bool)", self._onConfirmOrientClicked)
+        self._registerButton.connect("clicked(bool)", self._onRegisterClicked)
+        self._screenshotDirSelector.connect("currentPathChanged(QString)", self._onScreenshotDirChanged)
+        self._screenshotSizeSpinBox.connect("valueChanged(int)", self._onScreenshotSettingChanged)
+        self._showColorLegendCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
+        self._normalizeZoomCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
+        self._occlusalViewsCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
+        self._butterflyViewCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
+        self._lateralViewsCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
+        self._screenshotButton.connect("clicked(bool)", self._onScreenshotClicked)
         self._mapButton.connect("clicked(bool)", self._onMapClicked)
         self._runButton.connect("clicked(bool)", self._onRunClicked)
         self._primaryTauSpinBox.connect("valueChanged(double)", self._onSettingChanged)
@@ -313,6 +429,23 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             widget.blockSignals(True)
             widget.setValue(value)
             widget.blockSignals(False)
+        if pn.screenshotDir:
+            self._screenshotDirSelector.blockSignals(True)
+            self._screenshotDirSelector.setCurrentPath(pn.screenshotDir)
+            self._screenshotDirSelector.blockSignals(False)
+        self._screenshotSizeSpinBox.blockSignals(True)
+        self._screenshotSizeSpinBox.setValue(pn.screenshotSize)
+        self._screenshotSizeSpinBox.blockSignals(False)
+        for widget, attr in (
+            (self._showColorLegendCheckBox,   "showColorLegend"),
+            (self._normalizeZoomCheckBox,     "normalizeZoom"),
+            (self._occlusalViewsCheckBox,     "takeOcclusalViews"),
+            (self._butterflyViewCheckBox,     "takeButterflyView"),
+            (self._lateralViewsCheckBox,      "takeLateralViews"),
+        ):
+            widget.blockSignals(True)
+            widget.setChecked(getattr(pn, attr))
+            widget.blockSignals(False)
 
     def _onSettingChanged(self, *_):
         if self._parameterNode is None:
@@ -320,6 +453,20 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._parameterNode.primaryTau = self._primaryTauSpinBox.value
         self._parameterNode.nSectors   = int(self._nSectorsSpinBox.value)
         self._parameterNode.minArea    = self._minAreaSpinBox.value
+
+    def _onScreenshotDirChanged(self, path):
+        if self._parameterNode is not None:
+            self._parameterNode.screenshotDir = path
+
+    def _onScreenshotSettingChanged(self, *_):
+        if self._parameterNode is not None:
+            pn = self._parameterNode
+            pn.screenshotSize      = self._screenshotSizeSpinBox.value
+            pn.showColorLegend     = self._showColorLegendCheckBox.isChecked()
+            pn.normalizeZoom       = self._normalizeZoomCheckBox.isChecked()
+            pn.takeOcclusalViews   = self._occlusalViewsCheckBox.isChecked()
+            pn.takeButterflyView   = self._butterflyViewCheckBox.isChecked()
+            pn.takeLateralViews    = self._lateralViewsCheckBox.isChecked()
 
     # ── Timepoint rows ────────────────────────────────────────────────────
 
@@ -408,6 +555,66 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
 
     # ── Map / Run ─────────────────────────────────────────────────────────
 
+    def _requireTimepoints(self, minCount=1):
+        timepoints = [r["tp"] for r in self._timepointRows]
+        if len(timepoints) < minCount:
+            slicer.util.errorDisplay(
+                f"At least {minCount} timepoint(s) with upper and lower arch mesh required."
+            )
+            return None
+        for r in self._timepointRows:
+            tp = r["tp"]
+            if tp.upperModel is None or tp.lowerModel is None:
+                slicer.util.errorDisplay(
+                    f"Timepoint '{tp.label}': upper and lower arch mesh must both be selected."
+                )
+                return None
+        return timepoints
+
+    def _onOrientT0Clicked(self):
+        timepoints = self._requireTimepoints(1)
+        if timepoints is None:
+            return
+        with slicer.util.tryWithErrorDisplay(_("Orient T0 failed."), waitCursor=True):
+            self.logic.orientT0Interactive(timepoints)
+
+    def _onConfirmOrientClicked(self):
+        timepoints = self._requireTimepoints(1)
+        if timepoints is None:
+            return
+        with slicer.util.tryWithErrorDisplay(_("Confirm orientation failed."), waitCursor=True):
+            self.logic.confirmT0Orientation(timepoints)
+
+    def _onRegisterClicked(self):
+        timepoints = self._requireTimepoints(2)
+        if timepoints is None:
+            return
+        with slicer.util.tryWithErrorDisplay(_("ICP registration failed."), waitCursor=True):
+            self.logic.registerTimepointsToT0(timepoints)
+
+    def _onScreenshotClicked(self):
+        outputDir = self._screenshotDirSelector.currentPath
+        if not outputDir:
+            slicer.util.errorDisplay("Please select an output folder first.")
+            return
+        timepoints = self._requireTimepoints(1)
+        if timepoints is None:
+            return
+        pn   = self._parameterNode
+        size = (pn.screenshotSize, pn.screenshotSize)
+        with slicer.util.tryWithErrorDisplay(_("Screenshot failed."), waitCursor=True):
+            self.logic.takeScreenshots(
+                timepoints,
+                outputDir,
+                takeOcclusalViews=pn.takeOcclusalViews,
+                takeButterflyView=pn.takeButterflyView,
+                takeLateralViews=pn.takeLateralViews,
+                screenshotSize=size,
+                showColorLegend=pn.showColorLegend,
+                normalizeZoom=pn.normalizeZoom,
+            )
+        slicer.util.infoDisplay(f"Screenshots saved to:\n{outputDir}")
+
     def _onMapClicked(self):
         timepoints = [r["tp"] for r in self._timepointRows]
         if not timepoints:
@@ -456,6 +663,566 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
     def getParameterNode(self):
         return OcclusionAnalysisModuleParameterNode(super().getParameterNode())
 
+    # ── Orientation & Registration ───────────────────────────────────────────
+
+    _T0_TRANSFORM_NAME = "T0_orientation"
+
+    def orientT0Interactive(self, timepoints):
+        """Attach an interactive linear transform to T0 upper+lower jaw."""
+        tp0 = timepoints[0]
+        tfmNode = slicer.mrmlScene.GetFirstNodeByName(self._T0_TRANSFORM_NAME)
+        if tfmNode is None:
+            tfmNode = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLLinearTransformNode", self._T0_TRANSFORM_NAME
+            )
+        for model in (tp0.upperModel, tp0.lowerModel):
+            if model:
+                model.SetAndObserveTransformNodeID(tfmNode.GetID())
+        tfmNode.CreateDefaultDisplayNodes()
+        dn = tfmNode.GetDisplayNode()
+        dn.SetEditorVisibility(True)
+        dn.SetEditorVisibility3D(True)
+        dn.SetRotationHandleComponentVisibility3D(True, True, True, True)
+        print(f"Interactive transform '{self._T0_TRANSFORM_NAME}' applied to T0. "
+              "Use the 3D-view handles, then click 'Confirm T0 orientation'.")
+
+    def confirmT0Orientation(self, timepoints):
+        """Harden the T0 orientation transform into mesh coordinates."""
+        tp0 = timepoints[0]
+        tfmNode = slicer.mrmlScene.GetFirstNodeByName(self._T0_TRANSFORM_NAME)
+        for model in (tp0.upperModel, tp0.lowerModel):
+            if model:
+                slicer.vtkSlicerTransformLogic().hardenTransform(model)
+        if tfmNode:
+            tfmNode.GetDisplayNode().SetEditorVisibility(False)
+            slicer.mrmlScene.RemoveNode(tfmNode)
+        print("T0 orientation confirmed and hardened.")
+
+    def registerTimepointsToT0(self, timepoints):
+        """Rigid ICP: register Ti upper jaw to T0 upper jaw; apply same transform to Ti lower jaw."""
+        t0_poly = self._getTriangulated(timepoints[0].upperModel)
+        print("\n=== ICP Registration ===")
+        for tp in timepoints[1:]:
+            upper_poly = self._getTriangulated(tp.upperModel)
+
+            icp = vtk.vtkIterativeClosestPointTransform()
+            icp.SetSource(upper_poly)
+            icp.SetTarget(t0_poly)
+            icp.GetLandmarkTransform().SetModeToRigidBody()
+            icp.SetMaximumNumberOfIterations(200)
+            icp.SetMaximumMeanDistance(0.01)
+            icp.CheckMeanDistanceOn()
+            icp.StartByMatchingCentroidsOn()
+            icp.Update()
+
+            tfmName = f"{tp.label}_registration"
+            tfmNode = slicer.mrmlScene.GetFirstNodeByName(tfmName)
+            if tfmNode is None:
+                tfmNode = slicer.mrmlScene.AddNewNodeByClass(
+                    "vtkMRMLLinearTransformNode", tfmName
+                )
+            tfmNode.SetMatrixTransformToParent(icp.GetMatrix())
+
+            for model in (tp.upperModel, tp.lowerModel):
+                if model:
+                    model.SetAndObserveTransformNodeID(tfmNode.GetID())
+                    slicer.vtkSlicerTransformLogic().hardenTransform(model)
+
+            slicer.mrmlScene.RemoveNode(tfmNode)
+            print(f"  {tp.label}: ICP registration applied and hardened.")
+        print("Registration complete.")
+
+    # ── Screenshots ──────────────────────────────────────────────────────────
+
+    def takeScreenshots(self, timepoints, outputDir,
+                        takeOcclusalViews=True, takeButterflyView=True, takeLateralViews=False,
+                        screenshotSize=(500, 500), showColorLegend=True, normalizeZoom=True):
+        import os, math
+        threeDWidget = slicer.app.layoutManager().threeDWidget(0)
+        threeDView   = threeDWidget.threeDView()
+        renderer     = threeDView.renderWindow().GetRenderers().GetFirstRenderer()
+        viewAngle    = renderer.GetActiveCamera().GetViewAngle()
+        aspect       = screenshotSize[0] / screenshotSize[1]
+        D            = 10000
+
+        # Save original model visibility before touching anything
+        origVisibility = {}
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+            dn = n.GetDisplayNode()
+            if dn:
+                origVisibility[n.GetID()] = dn.GetVisibility()
+
+        # ── Pre-compute normalized cameras (union of all timepoint meshes) ──
+        # Only meaningful with more than one timepoint.
+        globalUpperCam     = None   # (focal, camPos, viewUp)
+        globalLowerCam     = None
+        globalButterflyCam = None
+        globalLateralCams  = None   # dict: suffix → (focal, camPos, viewUp)
+
+        if normalizeZoom and len(timepoints) > 1:
+            if takeOcclusalViews:
+                upper_pts = [vtk_to_numpy(tp.upperModel.GetPolyData().GetPoints().GetData())
+                             for tp in timepoints if tp.upperModel]
+                if upper_pts:
+                    all_u  = np.vstack(upper_pts)
+                    ctr    = (all_u.min(axis=0) + all_u.max(axis=0)) / 2
+                    f, c   = self._fitCameraToMeshPoints(
+                        all_u, tuple(ctr + [0, 0, -D]), tuple(ctr), (0, 1, 0), viewAngle, aspect)
+                    globalUpperCam = (f, c, (0, 1, 0))
+
+                lower_pts = [vtk_to_numpy(tp.lowerModel.GetPolyData().GetPoints().GetData())
+                             for tp in timepoints if tp.lowerModel]
+                if lower_pts:
+                    all_l  = np.vstack(lower_pts)
+                    ctr    = (all_l.min(axis=0) + all_l.max(axis=0)) / 2
+                    f, c   = self._fitCameraToMeshPoints(
+                        all_l, tuple(ctr + [0, 0, D]), tuple(ctr), (0, -1, 0), viewAngle, aspect)
+                    globalLowerCam = (f, c, (0, -1, 0))
+
+            if takeButterflyView:
+                all_bf = []
+                for tp in timepoints:
+                    if not (tp.upperModel and tp.lowerModel):
+                        continue
+                    b = [0.0] * 6; tp.upperModel.GetRASBounds(b)
+                    cy_h = b[2] - 1.0;  cz_h = b[4]
+                    m_np = np.array([[1,0,0,0],[0,-1,0,2*cy_h],[0,0,-1,2*cz_h],[0,0,0,1]],
+                                    dtype=float)
+                    pts_u = vtk_to_numpy(tp.upperModel.GetPolyData().GetPoints().GetData())
+                    pts_l = vtk_to_numpy(tp.lowerModel.GetPolyData().GetPoints().GetData())
+                    pts_l_xfm = (m_np @ np.hstack(
+                        [pts_l, np.ones((len(pts_l), 1))]).T).T[:, :3]
+                    all_bf.extend([pts_u, pts_l_xfm])
+                if all_bf:
+                    all_bf_arr   = np.vstack(all_bf)
+                    rough_foc    = (all_bf_arr.min(axis=0) + all_bf_arr.max(axis=0)) / 2
+                    rough_cam_bf = rough_foc + np.array([0, 0, -D])
+                    f, c = self._fitCameraToMeshPoints(
+                        all_bf_arr, rough_cam_bf, rough_foc, (0, 1, 0), viewAngle, aspect)
+                    globalButterflyCam = (f, c, (0, 1, 0))
+
+            if takeLateralViews:
+                s45 = math.sin(math.radians(45)); c45 = math.cos(math.radians(45))
+                all_lat = np.vstack([
+                    vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
+                    for tp in timepoints
+                    for m in (tp.upperModel, tp.lowerModel) if m
+                ])
+                ctr = (all_lat.min(axis=0) + all_lat.max(axis=0)) / 2
+                cx, cy, cz = ctr
+                foc_rough = tuple(ctr)
+                views_rough = [
+                    ("anterior",      (cx,          cy + D,      cz)),
+                    ("posterior",     (cx,          cy - D,      cz)),
+                    ("left",          (cx - D,      cy,          cz)),
+                    ("right",         (cx + D,      cy,          cz)),
+                    ("oblique_left",  (cx - D*s45,  cy + D*c45,  cz)),
+                    ("oblique_right", (cx + D*s45,  cy + D*c45,  cz)),
+                ]
+                globalLateralCams = {}
+                for suffix, cam_r in views_rough:
+                    f, c = self._fitCameraToMeshPoints(
+                        all_lat, cam_r, foc_rough, (0, 0, 1), viewAngle, aspect)
+                    globalLateralCams[suffix] = (f, c, (0, 0, 1))
+
+        print(f"\n=== Screenshots → {outputDir} ===")
+        for tp in timepoints:
+            upperMap = slicer.mrmlScene.GetFirstNodeByName(
+                f"{tp.upperModel.GetName()}_distance"
+            )
+            lowerMap = slicer.mrmlScene.GetFirstNodeByName(
+                f"{tp.lowerModel.GetName()}_distance"
+            )
+
+            if takeOcclusalViews:
+                # Upper jaw: camera from inferior (looking +Z upward)
+                focal, camPos, viewUp = self._setupViewForModel(
+                    tp.upperModel, upperMap, threeDView, lookFromInferior=True,
+                    size=screenshotSize
+                )
+                if globalUpperCam:
+                    focal, camPos, viewUp = globalUpperCam
+                self._setColorLegendVisibility(upperMap, showColorLegend)
+                path = os.path.join(outputDir, f"{tp.label}_upper.png")
+                self._captureTransparent(threeDView, path, size=screenshotSize,
+                                         focal=focal, camPos=camPos, viewUp=viewUp)
+                print(f"  {tp.label}_upper.png")
+
+                # Lower jaw: camera from superior (looking −Z downward)
+                focal, camPos, viewUp = self._setupViewForModel(
+                    tp.lowerModel, lowerMap, threeDView, lookFromInferior=False,
+                    size=screenshotSize
+                )
+                if globalLowerCam:
+                    focal, camPos, viewUp = globalLowerCam
+                self._setColorLegendVisibility(lowerMap, showColorLegend)
+                path = os.path.join(outputDir, f"{tp.label}_lower.png")
+                self._captureTransparent(threeDView, path, size=screenshotSize,
+                                         focal=focal, camPos=camPos, viewUp=viewUp)
+                print(f"  {tp.label}_lower.png")
+
+            if takeButterflyView and upperMap and lowerMap:
+                self._setColorLegendVisibility(upperMap, showColorLegend)
+                self._setColorLegendVisibility(lowerMap, showColorLegend)
+                path = os.path.join(outputDir, f"{tp.label}_butterfly.png")
+                self._takeButterflyScreenshot(
+                    tp, upperMap, lowerMap, threeDView, path,
+                    size=screenshotSize, precomputedCamera=globalButterflyCam
+                )
+                print(f"  {tp.label}_butterfly.png")
+
+            if takeLateralViews:
+                self._takeLateralViews(
+                    tp, upperMap, lowerMap, threeDView, outputDir,
+                    size=screenshotSize, showColorLegend=showColorLegend,
+                    precomputedCameras=globalLateralCams
+                )
+
+        self._restoreAllVisibility(origVisibility)
+        print("Done.")
+
+    def _setColorLegendVisibility(self, distMapNode, visible):
+        """Show or hide the color legend associated with *distMapNode*."""
+        if distMapNode is None:
+            return
+        clNode = slicer.mrmlScene.GetFirstNodeByName(
+            f"{distMapNode.GetName()} color legend"
+        )
+        if clNode is not None:
+            clNode.SetVisibility(visible)
+
+    def _takeLateralViews(self, tp, upperMap, lowerMap, threeDView, outputDir,
+                          size=(500, 500), showColorLegend=True, precomputedCameras=None):
+        """Five lateral views of both jaws in occlusion.
+
+        Camera directions in RAS (R=right, A=anterior, S=superior):
+          anterior      – from patient's front, looking +A
+          left          – from patient's left,  looking +R
+          right         – from patient's right, looking −R
+          oblique_left  – 45° between anterior and left
+          oblique_right – 45° between anterior and right
+        ViewUp is always (0, 0, 1) = Superior for all lateral shots.
+        """
+        import os, math
+
+        # Show all four nodes; hide everything else
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            n  = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+            dn = n.GetDisplayNode()
+            if dn:
+                dn.SetVisibility(False)
+        for node in (tp.upperModel, tp.lowerModel, upperMap, lowerMap):
+            if node and node.GetDisplayNode():
+                node.GetDisplayNode().SetVisibility(True)
+        self._setColorLegendVisibility(upperMap, showColorLegend)
+        self._setColorLegendVisibility(lowerMap, showColorLegend)
+
+        # Combined bounds of both arches
+        b = [0.0] * 6
+        tp.upperModel.GetRASBounds(b)
+        lb = [0.0] * 6
+        tp.lowerModel.GetRASBounds(lb)
+        bounds = [
+            min(b[0], lb[0]), max(b[1], lb[1]),
+            min(b[2], lb[2]), max(b[3], lb[3]),
+            min(b[4], lb[4]), max(b[5], lb[5]),
+        ]
+        cx = (bounds[0] + bounds[1]) / 2
+        cy = (bounds[2] + bounds[3]) / 2
+        cz = (bounds[4] + bounds[5]) / 2
+        focal = (cx, cy, cz)
+        viewUp = (0, 0, 1)
+        D = 10000
+
+        s45 = math.sin(math.radians(45))
+        c45 = math.cos(math.radians(45))
+
+        # (suffix, camera_position)
+        # In RAS, +Y = Anterior (toward patient's face), so the anterior camera
+        # sits at +Y and looks toward −Y to see the front teeth.
+        views = [
+            ("anterior",      (cx,            cy + D,        cz)),
+            ("posterior",     (cx,            cy - D,        cz)),
+            ("left",          (cx - D,        cy,            cz)),
+            ("right",         (cx + D,        cy,            cz)),
+            ("oblique_left",  (cx - D * s45,  cy + D * c45,  cz)),
+            ("oblique_right", (cx + D * s45,  cy + D * c45,  cz)),
+        ]
+
+        # Per-timepoint camera computation (used when normalizeZoom is off)
+        renderer  = threeDView.renderWindow().GetRenderers().GetFirstRenderer()
+        viewAngle = renderer.GetActiveCamera().GetViewAngle()
+        if precomputedCameras is None:
+            pts_list = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
+                        for m in (tp.upperModel, tp.lowerModel) if m]
+            all_pts = np.vstack(pts_list)
+
+        for suffix, camPos_rough in views:
+            if precomputedCameras and suffix in precomputedCameras:
+                adj_focal, adj_cam, viewUp = precomputedCameras[suffix]
+            else:
+                adj_focal, adj_cam = self._fitCameraToMeshPoints(
+                    all_pts, camPos_rough, focal, viewUp, viewAngle,
+                    aspect=size[0] / size[1]
+                )
+            path = os.path.join(outputDir, f"{tp.label}_{suffix}.png")
+            self._captureTransparent(threeDView, path, size=size,
+                                     focal=adj_focal, camPos=adj_cam, viewUp=viewUp)
+            print(f"  {tp.label}_{suffix}.png")
+
+    def _fitCameraToMeshPoints(self, pts, camPos, roughFocal, viewUp,
+                               viewAngle_deg, aspect=1.0, margin=1.2):
+        """Compute camera focal point and position that centre and zoom to *pts*.
+
+        Projects all mesh vertices onto the view plane (defined by the direction
+        camPos→roughFocal and viewUp), finds the projected bounding-box centre
+        (adjusted focal) and half-extents, then derives the required camera
+        distance analytically:
+
+            dist = max(half_h / tan(vFOV/2),
+                       half_w / (tan(vFOV/2) * aspect)) * margin
+
+        This is independent of ResetCamera and correctly handles horseshoe
+        shapes whose bounding-box centre lies in empty interior space.
+
+        Returns (focal, camPos) as tuples ready to pass to the MRML camera node.
+        """
+        import math
+
+        cam = np.array(camPos,     dtype=float)
+        foc = np.array(roughFocal, dtype=float)
+        up  = np.array(viewUp,     dtype=float)
+
+        d = foc - cam;  d /= np.linalg.norm(d)
+        r = np.cross(d, up);  r /= np.linalg.norm(r)
+        u = np.cross(r, d);   u /= np.linalg.norm(u)
+
+        rel      = pts - foc
+        r_coords = rel @ r
+        u_coords = rel @ u
+
+        r_ctr = (r_coords.min() + r_coords.max()) / 2.0
+        u_ctr = (u_coords.min() + u_coords.max()) / 2.0
+        adj_focal = foc + r_ctr * r + u_ctr * u
+
+        half_w = (r_coords.max() - r_coords.min()) / 2.0
+        half_h = (u_coords.max() - u_coords.min()) / 2.0
+
+        tan_h = math.tan(math.radians(viewAngle_deg / 2.0))
+        dist  = max(half_h / tan_h,
+                    half_w / (tan_h * aspect)) * margin
+
+        adj_cam = adj_focal - dist * d
+        return tuple(adj_focal), tuple(adj_cam)
+
+    def _fitCamera(self, threeDView, cx, cy, cz, lookFromInferior, archModel, size=(1, 1)):
+        """Compute occlusal camera parameters for *archModel*. Returns (focal, camPos, viewUp)."""
+        renderer  = threeDView.renderWindow().GetRenderers().GetFirstRenderer()
+        viewAngle = renderer.GetActiveCamera().GetViewAngle()
+
+        D = 10000
+        if lookFromInferior:
+            rough_cam = (cx, cy, cz - D)
+            viewUp    = (0, 1, 0)
+        else:
+            rough_cam = (cx, cy, cz + D)
+            viewUp    = (0, -1, 0)
+
+        pts = vtk_to_numpy(archModel.GetPolyData().GetPoints().GetData())
+        focal, camPos = self._fitCameraToMeshPoints(
+            pts, rough_cam, (cx, cy, cz), viewUp, viewAngle,
+            aspect=size[0] / size[1]
+        )
+        return focal, camPos, viewUp
+
+    def _setupViewForModel(self, archModel, distMapModel, threeDView, lookFromInferior,
+                           size=(1, 1)):
+        """Hide everything, show archModel + distMapModel.
+        Returns (focal, camPos, viewUp) — caller passes these to _captureTransparent."""
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+            dn = n.GetDisplayNode()
+            if dn:
+                dn.SetVisibility(False)
+        for node in (archModel, distMapModel):
+            if node and node.GetDisplayNode():
+                node.GetDisplayNode().SetVisibility(True)
+
+        bounds = [0.0] * 6
+        archModel.GetRASBounds(bounds)
+        cx = (bounds[0] + bounds[1]) / 2
+        cy = (bounds[2] + bounds[3]) / 2
+        cz = (bounds[4] + bounds[5]) / 2
+
+        return self._fitCamera(threeDView, cx, cy, cz, lookFromInferior, archModel, size)
+
+    def _takeButterflyScreenshot(self, tp, upperMap, lowerMap, threeDView, path,
+                                  size=(500, 500), precomputedCamera=None):
+        """Rotate lower jaw 180° around the LR axis posterior to the upper jaw,
+        take a combined screenshot, then undo."""
+        bounds = [0.0] * 6
+        tp.upperModel.GetRASBounds(bounds)
+        # Hinge: 1 mm posterior to upper jaw posterior edge, at the upper jaw's inferior Z
+        cy_hinge = bounds[2] - 1.0   # 1 mm posterior (Y_min of upper jaw)
+        cz_hinge = bounds[4]          # inferior edge of upper jaw
+
+        # 180° rotation around the LR (X) axis through (_, cy_hinge, cz_hinge):
+        #   x' = x,  y' = 2*cy_hinge - y,  z' = 2*cz_hinge - z
+        mat = vtk.vtkMatrix4x4()
+        mat.SetElement(0, 0,  1)
+        mat.SetElement(1, 1, -1);  mat.SetElement(1, 3, 2 * cy_hinge)
+        mat.SetElement(2, 2, -1);  mat.SetElement(2, 3, 2 * cz_hinge)
+        mat.SetElement(3, 3,  1)
+
+        tfmNode = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLLinearTransformNode", "_butterfly_tmp"
+        )
+        tfmNode.SetMatrixTransformToParent(mat)
+        for node in (tp.lowerModel, lowerMap):
+            if node:
+                node.SetAndObserveTransformNodeID(tfmNode.GetID())
+
+        # Show all four models
+        for node in (tp.upperModel, upperMap, tp.lowerModel, lowerMap):
+            if node and node.GetDisplayNode():
+                node.GetDisplayNode().SetVisibility(True)
+
+        # Build world-space point cloud: upper jaw as-is, lower jaw with butterfly transform
+        pts_upper = vtk_to_numpy(tp.upperModel.GetPolyData().GetPoints().GetData())
+        pts_lower = vtk_to_numpy(tp.lowerModel.GetPolyData().GetPoints().GetData())
+        mat_np = np.array([[mat.GetElement(i, j) for j in range(4)] for i in range(4)])
+        pts_lower_xfm = (mat_np @ np.hstack(
+            [pts_lower, np.ones((len(pts_lower), 1))]
+        ).T).T[:, :3]
+        all_pts = np.vstack([pts_upper, pts_lower_xfm])
+
+        # Rough focal: centre of the combined axis-aligned bounding box
+        rough_focal = all_pts.mean(axis=0)
+        viewUp = (0, 1, 0)
+        D = 10000
+        rough_cam = rough_focal + np.array([0, 0, -D])
+
+        if precomputedCamera:
+            focal, camPos, viewUp = precomputedCamera
+        else:
+            renderer  = threeDView.renderWindow().GetRenderers().GetFirstRenderer()
+            viewAngle = renderer.GetActiveCamera().GetViewAngle()
+            focal, camPos = self._fitCameraToMeshPoints(
+                all_pts, rough_cam, rough_focal, viewUp, viewAngle,
+                aspect=size[0] / size[1]
+            )
+        self._captureTransparent(threeDView, path, size=size,
+                                  focal=focal, camPos=camPos, viewUp=viewUp)
+
+        # Undo: remove transform from lower models
+        for node in (tp.lowerModel, lowerMap):
+            if node:
+                node.SetAndObserveTransformNodeID(None)
+        slicer.mrmlScene.RemoveNode(tfmNode)
+
+    def _captureTransparent(self, threeDView, filePath, size=(500, 500),
+                             focal=None, camPos=None, viewUp=None):
+        """Capture the 3D view to a PNG with transparent background at *size* pixels.
+
+        If focal/camPos/viewUp are provided they are applied to both the MRML
+        camera node and the VTK camera immediately before renderWindow.Render(),
+        after all other scene modifications, so nothing can override the zoom.
+        """
+        renderWindow = threeDView.renderWindow()
+        renderer     = renderWindow.GetRenderers().GetFirstRenderer()
+        viewNode     = threeDView.mrmlViewNode()
+
+        # Save background via the MRML view node (authoritative source for Slicer)
+        origBg1  = tuple(viewNode.GetBackgroundColor())
+        origBg2  = tuple(viewNode.GetBackgroundColor2())
+
+        # Temporarily resize the render window
+        origSize = renderWindow.GetSize()
+        renderWindow.SetSize(*size)
+
+        # Enable alpha bit planes and depth peeling
+        renderWindow.SetAlphaBitPlanes(1)
+        renderWindow.SetMultiSamples(0)
+        renderer.SetUseDepthPeeling(True)
+        renderer.SetMaximumNumberOfPeels(100)
+        renderer.SetOcclusionRatio(0.0)
+
+        # Hide slice planes in the 3D view
+        sliceVisibility = {}
+        for name in slicer.app.layoutManager().sliceViewNames():
+            sliceNode = slicer.app.layoutManager().sliceWidget(name).mrmlSliceNode()
+            sliceVisibility[name] = (sliceNode.GetSliceVisible(), sliceNode.GetWidgetVisible())
+            sliceNode.SetSliceVisible(False)
+            sliceNode.SetWidgetVisible(False)
+
+        # Black + alpha=0 background (both view node and renderer)
+        viewNode.SetBackgroundColor(0.0, 0.0, 0.0)
+        viewNode.SetBackgroundColor2(0.0, 0.0, 0.0)
+        renderer.SetBackground(0.0, 0.0, 0.0)
+        renderer.SetBackground2(0.0, 0.0, 0.0)
+        renderer.SetGradientBackground(False)
+        if hasattr(renderer, "SetBackgroundAlpha"):
+            renderer.SetBackgroundAlpha(0.0)
+
+        # Apply camera last — after all MRML modifications — so nothing overrides it.
+        # Set both the MRML node (for Slicer tracking) and the VTK camera directly.
+        if focal is not None:
+            cameraNode = slicer.modules.cameras.logic().GetViewActiveCameraNode(
+                threeDView.mrmlViewNode()
+            )
+            cameraNode.SetFocalPoint(*focal)
+            cameraNode.SetPosition(*camPos)
+            cameraNode.SetViewUp(*viewUp)
+            cam_vtk = renderer.GetActiveCamera()
+            cam_vtk.SetFocalPoint(*focal)
+            cam_vtk.SetPosition(*camPos)
+            cam_vtk.SetViewUp(*viewUp)
+            # In orthographic (parallel) projection, zoom is controlled by
+            # ParallelScale, not camera distance.  Convert: scale = dist*tan(fov/2).
+            if cam_vtk.GetParallelProjection():
+                import math
+                cam_dist = np.linalg.norm(np.array(camPos) - np.array(focal))
+                parallelScale = cam_dist * math.tan(math.radians(cam_vtk.GetViewAngle() / 2.0))
+                cam_vtk.SetParallelScale(parallelScale)
+            renderer.ResetCameraClippingRange()
+
+        renderWindow.Render()
+
+        wti = vtk.vtkWindowToImageFilter()
+        wti.SetInput(renderWindow)
+        wti.SetInputBufferTypeToRGBA()
+        wti.ReadFrontBufferOff()
+        wti.Update()
+
+        writer = vtk.vtkPNGWriter()
+        writer.SetFileName(filePath)
+        writer.SetInputData(wti.GetOutput())
+        writer.Write()
+
+        # Restore slice plane visibility
+        for name, (sv, wv) in sliceVisibility.items():
+            sliceNode = slicer.app.layoutManager().sliceWidget(name).mrmlSliceNode()
+            sliceNode.SetSliceVisible(sv)
+            sliceNode.SetWidgetVisible(wv)
+
+        # Restore background, window size, and render settings
+        viewNode.SetBackgroundColor(*origBg1)
+        viewNode.SetBackgroundColor2(*origBg2)
+        renderWindow.SetSize(*origSize)
+        renderWindow.SetAlphaBitPlanes(0)
+        renderWindow.SetMultiSamples(4)
+        if hasattr(renderer, "SetBackgroundAlpha"):
+            renderer.SetBackgroundAlpha(1.0)
+        threeDView.forceRender()
+
+    def _restoreAllVisibility(self, origVisibility):
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+            dn = n.GetDisplayNode()
+            if dn and n.GetID() in origVisibility:
+                dn.SetVisibility(origVisibility[n.GetID()])
+
     # ── Occlusion maps ───────────────────────────────────────────────────────
 
     def createOcclusionMaps(self, timepoints,
@@ -467,13 +1234,14 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         mesh (source→upper, Z shift +zOffset) and the upper mesh
         (source→lower, Z shift -zOffset so it moves away from the upper jaw).
         """
+        archColor = (0.902, 0.898, 0.871)   # #e6e5de
         print("\n=== Creating occlusion maps ===")
         for tp in timepoints:
             lower_poly = self._getTriangulated(tp.lowerModel)
             upper_poly = self._getTriangulated(tp.upperModel)
             self._createSingleOcclusionMap(
                 source_poly=lower_poly,
-                target_poly=self._ensureOutwardNormals(upper_poly),
+                target_poly=upper_poly,
                 source_model=tp.lowerModel,
                 zOffset=+zOffset,
                 scalarRange=scalarRange,
@@ -481,12 +1249,16 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             )
             self._createSingleOcclusionMap(
                 source_poly=upper_poly,
-                target_poly=self._ensureOutwardNormals(lower_poly),
+                target_poly=lower_poly,
                 source_model=tp.upperModel,
                 zOffset=-zOffset,
                 scalarRange=scalarRange,
                 thresholdRange=thresholdRange,
             )
+            for model in (tp.upperModel, tp.lowerModel):
+                dn = model.GetDisplayNode()
+                if dn:
+                    dn.SetColor(*archColor)
         print(f"Done. {len(timepoints) * 2} occlusion map(s) in scene.")
 
     def _createSingleOcclusionMap(self, source_poly, target_poly, source_model,
@@ -494,7 +1266,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         dist = vtk.vtkDistancePolyDataFilter()
         dist.SetInputData(0, source_poly)
         dist.SetInputData(1, target_poly)
-        dist.SignedDistanceOn()
+        dist.SignedDistanceOff()
         dist.ComputeSecondDistanceOff()
         dist.Update()
 
@@ -547,7 +1319,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         clNode.SetTitleText("")
         clNode.SetLabelFormat("%.2f")
         clNode.SetSize(.08,.8)
-        clNode.SetPosition(.9,.5)
+        clNode.SetPosition(1.0,.5)
 
         clNode.GetLabelTextProperty().SetColor(0,0,0)
         clNode.GetLabelTextProperty().SetShadow(False)
