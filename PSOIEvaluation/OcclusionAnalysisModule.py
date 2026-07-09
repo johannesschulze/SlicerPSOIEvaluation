@@ -340,6 +340,13 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         )
         screenshotLayout.addRow(self._screenshotButton)
 
+        self._reportButton = qt.QPushButton("Generate report")
+        self._reportButton.setToolTip(
+            "Write occlusion_analysis_report.md/.pdf/.odt to the output folder "
+            "(requires pandoc; PDF also requires xelatex)."
+        )
+        screenshotLayout.addRow(self._reportButton)
+
         # ── Buttons ───────────────────────────────────────────────────────
         self._mapButton = qt.QPushButton("Create occlusion maps")
         self._mapButton.setStyleSheet("padding: 6px;")
@@ -368,6 +375,7 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._butterflyViewCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
         self._lateralViewsCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
         self._screenshotButton.connect("clicked(bool)", self._onScreenshotClicked)
+        self._reportButton.connect("clicked(bool)", self._onReportClicked)
         self._mapButton.connect("clicked(bool)", self._onMapClicked)
         self._runButton.connect("clicked(bool)", self._onRunClicked)
         self._primaryTauSpinBox.connect("valueChanged(double)", self._onSettingChanged)
@@ -616,6 +624,23 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             )
         slicer.util.infoDisplay(f"Screenshots saved to:\n{outputDir}")
 
+    def _onReportClicked(self):
+        outputDir = self._screenshotDirSelector.currentPath
+        if not outputDir:
+            slicer.util.errorDisplay("Please select an output folder first.")
+            return
+        timepoints = self._requireTimepoints(1)
+        if timepoints is None:
+            return
+        with slicer.util.tryWithErrorDisplay(_("Report generation failed."), waitCursor=True):
+            html_path, generated = self.logic.generateReport(timepoints, outputDir)
+        pdfs = [p for p in generated if p.endswith(".pdf")]
+        parts = []
+        if pdfs:
+            parts.append(f"PDF:  {pdfs[0]}")
+        parts.append(f"HTML: {html_path}")
+        slicer.util.infoDisplay("Report written:\n" + "\n".join(parts))
+
     def _onMapClicked(self):
         timepoints = [r["tp"] for r in self._timepointRows]
         if not timepoints:
@@ -754,6 +779,22 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             if dn:
                 origVisibility[n.GetID()] = dn.GetVisibility()
 
+        # ── Pre-compute shared butterfly hinge ────────────────────────────
+        # Posterior border of the upper model with the largest AP extent,
+        # so all timepoints fold around the same axis for direct comparison.
+        sharedButterflyHinge = None   # (cy_hinge, cz_hinge)
+        if takeButterflyView and len(timepoints) > 1:
+            best_ap, best_b = -1.0, None
+            for tp in timepoints:
+                if tp.upperModel:
+                    b = [0.0] * 6
+                    tp.upperModel.GetRASBounds(b)
+                    ap = b[3] - b[2]
+                    if ap > best_ap:
+                        best_ap, best_b = ap, b
+            if best_b is not None:
+                sharedButterflyHinge = (best_b[2] - 1.0, best_b[4])
+
         # ── Pre-compute normalized cameras (union of all timepoint meshes) ──
         # Only meaningful with more than one timepoint.
         globalUpperCam     = None   # (focal, camPos, viewUp)
@@ -781,13 +822,12 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                         all_l, tuple(ctr + [0, 0, D]), tuple(ctr), (0, -1, 0), viewAngle, aspect)
                     globalLowerCam = (f, c, (0, -1, 0))
 
-            if takeButterflyView:
+            if takeButterflyView and sharedButterflyHinge:
+                cy_h, cz_h = sharedButterflyHinge
                 all_bf = []
                 for tp in timepoints:
                     if not (tp.upperModel and tp.lowerModel):
                         continue
-                    b = [0.0] * 6; tp.upperModel.GetRASBounds(b)
-                    cy_h = b[2] - 1.0;  cz_h = b[4]
                     m_np = np.array([[1,0,0,0],[0,-1,0,2*cy_h],[0,0,-1,2*cz_h],[0,0,0,1]],
                                     dtype=float)
                     pts_u = vtk_to_numpy(tp.upperModel.GetPolyData().GetPoints().GetData())
@@ -869,7 +909,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 path = os.path.join(outputDir, f"{tp.label}_butterfly.png")
                 self._takeButterflyScreenshot(
                     tp, upperMap, lowerMap, threeDView, path,
-                    size=screenshotSize, precomputedCamera=globalButterflyCam
+                    size=screenshotSize, precomputedCamera=globalButterflyCam,
+                    hinge=sharedButterflyHinge
                 )
                 print(f"  {tp.label}_butterfly.png")
 
@@ -1059,14 +1100,16 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         return self._fitCamera(threeDView, cx, cy, cz, lookFromInferior, archModel, size)
 
     def _takeButterflyScreenshot(self, tp, upperMap, lowerMap, threeDView, path,
-                                  size=(500, 500), precomputedCamera=None):
+                                  size=(500, 500), precomputedCamera=None, hinge=None):
         """Rotate lower jaw 180° around the LR axis posterior to the upper jaw,
         take a combined screenshot, then undo."""
-        bounds = [0.0] * 6
-        tp.upperModel.GetRASBounds(bounds)
-        # Hinge: 1 mm posterior to upper jaw posterior edge, at the upper jaw's inferior Z
-        cy_hinge = bounds[2] - 1.0   # 1 mm posterior (Y_min of upper jaw)
-        cz_hinge = bounds[4]          # inferior edge of upper jaw
+        if hinge is not None:
+            cy_hinge, cz_hinge = hinge
+        else:
+            bounds = [0.0] * 6
+            tp.upperModel.GetRASBounds(bounds)
+            cy_hinge = bounds[2] - 1.0   # 1 mm posterior (Y_min of upper jaw)
+            cz_hinge = bounds[4]          # inferior edge of upper jaw
 
         # 180° rotation around the LR (X) axis through (_, cy_hinge, cz_hinge):
         #   x' = x,  y' = 2*cy_hinge - y,  z' = 2*cz_hinge - z
@@ -1084,7 +1127,11 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             if node:
                 node.SetAndObserveTransformNodeID(tfmNode.GetID())
 
-        # Show all four models
+        # Hide everything, then show only the four nodes for this timepoint
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
+            if n.GetDisplayNode():
+                n.GetDisplayNode().SetVisibility(False)
         for node in (tp.upperModel, upperMap, tp.lowerModel, lowerMap):
             if node and node.GetDisplayNode():
                 node.GetDisplayNode().SetVisibility(True)
@@ -1630,6 +1677,127 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             cols["dOAS_robust"].SetValue(i, str(row["dOAS_robust"]))
             cols["verdict"].SetValue(i, row["verdict"])
         node.Modified()
+
+    # ── Report generation ─────────────────────────────────────────────────
+
+    def generateReport(self, timepoints, screenshotDir):
+        """Render report_template.html via Jinja2 and convert to PDF via WeasyPrint.
+
+        Saves occlusion_analysis_report.html (always) and .pdf (if WeasyPrint
+        succeeds) into screenshotDir. Returns (html_path, generated_paths).
+        """
+        import os
+
+        try:
+            import weasyprint
+        except ImportError:
+            slicer.util.pip_install("weasyprint")
+            import weasyprint
+
+        import jinja2
+
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        template_path = os.path.join(module_dir, "Resources", "report_template.html")
+        with open(template_path, encoding="utf-8") as f:
+            template_src = f.read()
+
+        context = self._prepareReportContext(timepoints, screenshotDir)
+        env = jinja2.Environment(loader=jinja2.BaseLoader(), autoescape=False)
+        html = env.from_string(template_src).render(**context)
+
+        html_path = os.path.join(screenshotDir, "occlusion_analysis_report.html")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html)
+
+        generated = [html_path]
+        try:
+            pdf_path = os.path.join(screenshotDir, "occlusion_analysis_report.pdf")
+            weasyprint.HTML(string=html, base_url=screenshotDir).write_pdf(pdf_path)
+            generated.append(pdf_path)
+            slicer.util.infoDisplay(f"Report PDF written: {pdf_path}", autoCloseMsec=2000)
+        except Exception as exc:
+            slicer.util.warningDisplay(f"WeasyPrint PDF conversion failed:\n{exc}")
+
+        return html_path, generated
+
+    def _prepareReportContext(self, timepoints, screenshotDir):
+        import os, base64, datetime
+
+        LATERAL = ["oblique_left", "anterior", "oblique_right",
+                   "left", "posterior", "right"]
+        OCC     = ["upper", "butterfly", "lower"]
+
+        def load_img(label, view):
+            path = os.path.join(screenshotDir, f"{label}_{view}.png")
+            if not os.path.isfile(path):
+                return None
+            with open(path, "rb") as f:
+                data = base64.b64encode(f.read()).decode("ascii")
+            return f"data:image/png;base64,{data}"
+
+        tp_data = []
+        for tp in timepoints:
+            lbl = tp.label
+            images = {v: load_img(lbl, v) for v in LATERAL + OCC}
+            tp_data.append({
+                "label":       lbl,
+                "has_lateral": any(images[v] for v in LATERAL),
+                "has_occ":     any(images[v] for v in OCC),
+                "images":      images,
+            })
+
+        def robust_sym(val):
+            return "✓" if str(val).strip().lower() == "true" else "✗"
+
+        vec_rows = []
+        for r in self._tableNodeToRows(RESULT_VECTORS_TABLE):
+            vec_rows.append({
+                "timepoint":   r["timepoint"],
+                "tau_mm":      f"{float(r['tau_mm']):.2f}",
+                "OCA_mm2":     f"{float(r['OCA_mm2']):.2f}",
+                "OCN":         f"{float(r['OCN']):.0f}",
+                "OCN_cluster": f"{float(r['OCN_cluster']):.0f}",
+                "OAS":         f"{float(r['OAS']):.4f}",
+            })
+
+        delta_rows = []
+        for r in self._tableNodeToRows(RESULT_DELTAS_TABLE):
+            verdict = str(r["verdict"]).strip()
+            delta_rows.append({
+                "comparison":   r["comparison"],
+                "tau_mm":       f"{float(r['tau_mm']):.2f}",
+                "dOCA_mm2":     f"{float(r['dOCA_mm2']):.2f}",
+                "dOCN":         f"{float(r['dOCN']):.0f}",
+                "dOAS":         f"{float(r['dOAS']):.4f}",
+                "dOCA_robust":  robust_sym(r["dOCA_robust"]),
+                "dOCN_robust":  robust_sym(r["dOCN_robust"]),
+                "dOAS_robust":  robust_sym(r["dOAS_robust"]),
+                "verdict":      verdict,
+                "verdict_class": f"verdict-{verdict.lower()}",
+            })
+
+        return {
+            "date":       datetime.date.today().isoformat(),
+            "timepoints": tp_data,
+            "vec_rows":   vec_rows,
+            "delta_rows": delta_rows,
+        }
+
+    def _tableNodeToRows(self, name):
+        """Return table node contents as list of dicts (str for all values)."""
+        node = slicer.mrmlScene.GetFirstNodeByName(name)
+        if node is None:
+            return []
+        t = node.GetTable()
+        n_rows = t.GetNumberOfRows()
+        n_cols = t.GetNumberOfColumns()
+        if n_rows == 0 or n_cols == 0:
+            return []
+        cols = [t.GetColumn(i) for i in range(n_cols)]
+        result = []
+        for r in range(n_rows):
+            result.append({c.GetName(): c.GetValue(r) for c in cols})
+        return result
 
     def _writeSummaryRow(self, delta_rows, primaryTau):
         """Wide-format table: one row, one column group per timepoint pair (primary τ only).

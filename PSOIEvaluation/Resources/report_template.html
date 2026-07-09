@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Occlusion Analysis</title>
+<style>
+/* ── Page layout ─────────────────────────────────────────────────── */
+@page {
+  size: A4;
+  margin: 2cm;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  color: #1a1a1a;
+  line-height: 1.45;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Title page ──────────────────────────────────────────────────── */
+.title-block {
+  text-align: center;
+  padding-top: 5cm;
+  padding-bottom: 3cm;
+}
+
+.title-block h1 {
+  font-size: 28pt;
+  font-weight: bold;
+  margin: 0 0 0.3em 0;
+  color: #1a3a5c;
+  border: none;
+}
+
+.title-block .subtitle {
+  font-size: 12pt;
+  color: #555;
+  margin: 0;
+}
+
+/* ── Page breaks ─────────────────────────────────────────────────── */
+.page-break {
+  break-before: page;
+}
+
+/* ── Headings ────────────────────────────────────────────────────── */
+h1 {
+  font-size: 16pt;
+  font-weight: bold;
+  color: #1a3a5c;
+  border-bottom: 2pt solid #1a3a5c;
+  padding-bottom: 4pt;
+  margin: 0 0 0.7em 0;
+}
+
+h2 {
+  font-size: 12pt;
+  font-weight: bold;
+  color: #2c5f8a;
+  border-bottom: 1pt solid #aac4dd;
+  padding-bottom: 2pt;
+  margin: 1.2em 0 0.5em 0;
+}
+
+h3 {
+  font-size: 11pt;
+  font-weight: bold;
+  color: #333;
+  margin: 0.8em 0 0.4em 0;
+}
+
+h4 {
+  font-size: 10pt;
+  font-style: italic;
+  color: #555;
+  margin: 0.5em 0 0.3em 0;
+}
+
+/* ── Table of Contents ───────────────────────────────────────────── */
+.toc ol {
+  margin: 0.3em 0;
+  padding-left: 1.8em;
+}
+
+.toc > ol {
+  padding-left: 0;
+  list-style-type: decimal;
+}
+
+.toc li {
+  margin: 3pt 0;
+}
+
+.toc ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin: 2pt 0;
+}
+
+/* ── Image grids ─────────────────────────────────────────────────── */
+.img-grid {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-bottom: 0.6em;
+}
+
+.img-grid td {
+  padding: 1pt;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.img-grid th {
+  background: #e8eef5;
+  border: 0.5pt solid #aac4dd;
+  padding: 4pt 2pt;
+  font-weight: bold;
+  font-size: 10pt;
+  text-align: center;
+}
+
+.img-grid img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.img-placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-size: 9pt;
+}
+
+/* ── Data tables ─────────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  margin-bottom: 1.2em;
+}
+
+.data-table th {
+  background: #d0dff0;
+  border: 0.5pt solid #8899bb;
+  padding: 4pt 7pt;
+  font-weight: bold;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table td {
+  border: 0.5pt solid #c0c8d8;
+  padding: 3pt 7pt;
+  vertical-align: middle;
+}
+
+.data-table tbody tr:nth-child(even) td {
+  background: #f4f7fb;
+}
+
+.num { text-align: right; }
+.ctr { text-align: center; }
+
+/* ── Verdict cells ───────────────────────────────────────────────── */
+.verdict-improved {
+  background: #c6efce !important;
+  color: #276221;
+  font-weight: bold;
+  text-align: center;
+}
+
+.verdict-worsened {
+  background: #ffc7ce !important;
+  color: #9c0006;
+  font-weight: bold;
+  text-align: center;
+}
+
+.verdict-inconclusive {
+  background: #ffeb9c !important;
+  color: #9c6500;
+  font-weight: bold;
+  text-align: center;
+}
+
+.verdict-unknown {
+  background: #eeeeee !important;
+  color: #666;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* ── TOC links ───────────────────────────────────────────────────── */
+.toc a {
+  color: #2c5f8a;
+  text-decoration: none;
+}
+
+.toc a:hover {
+  text-decoration: underline;
+}
+</style>
+</head>
+<body>
+
+<!-- ── Title block ──────────────────────────────────────────────── -->
+<div class="title-block">
+  <h1>Occlusion Analysis</h1>
+  <p class="subtitle">{{ date }}</p>
+</div>
+
+<!-- ── Table of Contents ────────────────────────────────────────── -->
+<h2>Table of Contents</h2>
+<nav class="toc">
+  <ol>
+    <li><a href="#renderings">Renderings</a>
+      <ol>
+        <li><a href="#timepoints">Timepoints</a>
+          <ol>
+            {% for tp in timepoints %}
+            <li><a href="#tp-{{ tp.label }}">{{ tp.label }}</a>
+              <ul>
+                {% if tp.has_lateral %}<li><a href="#tp-{{ tp.label }}-buccal">Buccal/oral views</a></li>{% endif %}
+                {% if tp.has_occ %}<li><a href="#tp-{{ tp.label }}-occ">Occlusion Views</a></li>{% endif %}
+              </ul>
+            </li>
+            {% endfor %}
+          </ol>
+        </li>
+        <li><a href="#time-series">Time Series</a></li>
+      </ol>
+    </li>
+    <li><a href="#analysis">Analysis</a>
+      <ol>
+        <li><a href="#vectors">Vectors</a></li>
+        <li><a href="#summary">Summary</a></li>
+      </ol>
+    </li>
+  </ol>
+</nav>
+
+<!-- ── Renderings ───────────────────────────────────────────────── -->
+<div class="page-break">
+<h1 id="renderings">Renderings</h1>
+<h2 id="timepoints">Timepoints</h2>
+
+{% for tp in timepoints %}
+{% if not loop.first %}<div class="page-break"></div>{% endif %}
+<h3 id="tp-{{ tp.label }}">{{ tp.label }}</h3>
+
+{% if tp.has_lateral %}
+<h4 id="tp-{{ tp.label }}-buccal">Buccal/oral views</h4>
+<table class="img-grid">
+  <tr>
+    <td style="width:33.33%">{% if tp.images.oblique_left %}<img src="{{ tp.images.oblique_left }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+    <td style="width:33.33%">{% if tp.images.anterior %}<img src="{{ tp.images.anterior }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+    <td style="width:33.33%">{% if tp.images.oblique_right %}<img src="{{ tp.images.oblique_right }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+  </tr>
+  <tr>
+    <td>{% if tp.images.left %}<img src="{{ tp.images.left }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+    <td>{% if tp.images.posterior %}<img src="{{ tp.images.posterior }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+    <td>{% if tp.images.right %}<img src="{{ tp.images.right }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+  </tr>
+</table>
+{% endif %}
+
+{% if tp.has_occ %}
+<h4 id="tp-{{ tp.label }}-occ">Occlusion Views</h4>
+<table class="img-grid">
+  <tr>
+    <td style="width:33.33%">{% if tp.images.upper %}<img src="{{ tp.images.upper }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+    <td style="width:33.33%">{% if tp.images.butterfly %}<img src="{{ tp.images.butterfly }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+    <td style="width:33.33%">{% if tp.images.lower %}<img src="{{ tp.images.lower }}">{% else %}<div class="img-placeholder">–</div>{% endif %}</td>
+  </tr>
+</table>
+{% endif %}
+
+{% endfor %}
+</div>
+
+<!-- ── Time Series ───────────────────────────────────────────────── -->
+<div class="page-break">
+<h2 id="time-series">Time Series</h2>
+<table class="img-grid">
+  <tr>
+    {% for tp in timepoints %}
+    <th style="width:{{ (100 / timepoints|length)|round|int }}%">{{ tp.label }}</th>
+    {% endfor %}
+  </tr>
+  {% for view in ['upper', 'butterfly', 'lower'] %}
+  <tr>
+    {% for tp in timepoints %}
+    <td>
+      {% if tp.images[view] %}
+      <img src="{{ tp.images[view] }}">
+      {% else %}
+      <div class="img-placeholder">–</div>
+      {% endif %}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<!-- ── Analysis ─────────────────────────────────────────────────── -->
+<div class="page-break">
+<h1 id="analysis">Analysis</h1>
+
+<h2 id="vectors">Vectors</h2>
+{% if vec_rows %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Timepoint</th>
+      <th>τ (mm)</th>
+      <th>OCA (mm²)</th>
+      <th>OCN</th>
+      <th>OCN cluster</th>
+      <th>OAS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in vec_rows %}
+    <tr>
+      <td>{{ r.timepoint }}</td>
+      <td class="num">{{ r.tau_mm }}</td>
+      <td class="num">{{ r.OCA_mm2 }}</td>
+      <td class="num">{{ r.OCN }}</td>
+      <td class="num">{{ r.OCN_cluster }}</td>
+      <td class="num">{{ r.OAS }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p><em>No vector data available.</em></p>
+{% endif %}
+
+<h2 id="summary">Summary</h2>
+{% if delta_rows %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Comparison</th>
+      <th>τ (mm)</th>
+      <th>ΔOCA (mm²)</th>
+      <th>ΔOCN</th>
+      <th>ΔOAS</th>
+      <th>Rob.&nbsp;OCA</th>
+      <th>Rob.&nbsp;OCN</th>
+      <th>Rob.&nbsp;OAS</th>
+      <th>Verdict</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in delta_rows %}
+    <tr>
+      <td>{{ r.comparison }}</td>
+      <td class="num">{{ r.tau_mm }}</td>
+      <td class="num">{{ r.dOCA_mm2 }}</td>
+      <td class="num">{{ r.dOCN }}</td>
+      <td class="num">{{ r.dOAS }}</td>
+      <td class="ctr">{{ r.dOCA_robust }}</td>
+      <td class="ctr">{{ r.dOCN_robust }}</td>
+      <td class="ctr">{{ r.dOAS_robust }}</td>
+      <td class="{{ r.verdict_class }}">{{ r.verdict }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p><em>No delta data available.</em></p>
+{% endif %}
+
+</div>
+</body>
+</html>
