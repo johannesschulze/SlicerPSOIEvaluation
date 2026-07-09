@@ -34,8 +34,9 @@ from slicer.ScriptedLoadableModule import (
 from slicer.parameterNodeWrapper import parameterNodeWrapper
 from slicer.util import VTKObservationMixin
 
-RESULT_VECTORS_TABLE = "OcclusionVectors"
-RESULT_DELTAS_TABLE  = "OcclusionDeltas"
+RESULT_VECTORS_TABLE  = "OcclusionVectors"
+RESULT_DELTAS_TABLE   = "OcclusionDeltas"
+RESULT_SUMMARY_TABLE  = "OcclusionSummary"
 SENSITIVITY_TAUS     = [0.03, 0.05, 0.08]
 DEFAULT_TAU          = 0.05
 DEFAULT_N_SECTORS    = 6
@@ -1427,7 +1428,9 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         ]
         self._writeVectorTable(vector_rows)
         self._writeDeltaTable(delta_rows)
-        print(f"\nResults written to '{RESULT_VECTORS_TABLE}' and '{RESULT_DELTAS_TABLE}'.")
+        self._writeSummaryRow(delta_rows, primaryTau)
+        print(f"\nResults written to '{RESULT_VECTORS_TABLE}', '{RESULT_DELTAS_TABLE}', "
+              f"and '{RESULT_SUMMARY_TABLE}'.")
 
     # ── Geometry helpers ─────────────────────────────────────────────────────
 
@@ -1626,6 +1629,38 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             cols["dOCN_robust"].SetValue(i, str(row["dOCN_robust"]))
             cols["dOAS_robust"].SetValue(i, str(row["dOAS_robust"]))
             cols["verdict"].SetValue(i, row["verdict"])
+        node.Modified()
+
+    def _writeSummaryRow(self, delta_rows, primaryTau):
+        """Wide-format table: one row, one column group per timepoint pair (primary τ only).
+
+        Column names: {A}-{B}_dOCA_mm2, {A}-{B}_dOCN, {A}-{B}_dOAS, {A}-{B}_verdict
+        One row per case → easy to paste into a master results spreadsheet.
+        """
+        # Collect primary-τ rows in pair order (insertion order preserved, py3.7+)
+        prim = {}
+        for row in delta_rows:
+            if abs(row["tau"] - primaryTau) < 1e-9:
+                prim.setdefault(row["comparison"], row)
+
+        col_defs = []
+        for comparison in prim:
+            prefix = comparison.replace(" → ", "-")
+            col_defs += [
+                (f"{prefix}_dOCA_mm2", False),
+                (f"{prefix}_dOCN",     False),
+                (f"{prefix}_dOAS",     False),
+                (f"{prefix}_verdict",  True),
+            ]
+
+        node, cols = self._makeOrResetTable(RESULT_SUMMARY_TABLE, col_defs)
+        node.GetTable().SetNumberOfRows(1)
+        for comparison, row in prim.items():
+            prefix = comparison.replace(" → ", "-")
+            cols[f"{prefix}_dOCA_mm2"].SetValue(0, row["dOCA"])
+            cols[f"{prefix}_dOCN"].SetValue(0, float(row["dOCN"]))
+            cols[f"{prefix}_dOAS"].SetValue(0, row["dOAS"])
+            cols[f"{prefix}_verdict"].SetValue(0, row["verdict"])
         node.Modified()
 
 
