@@ -47,6 +47,13 @@ OCCMAP_SCALAR_RANGE = (0.0, 0.1)   # mm  – display range mapped to color
 OCCMAP_THRESHOLD    = (0.0, 0.2)   # mm  – hide points outside this range (unsigned)
 OCCMAP_Z_OFFSET     = 0.1          # mm  – shift along Z to avoid z-fighting
 
+# Dental plaster-cast material — warm white, matte
+CAST_COLOR     = (0.960, 0.945, 0.910)
+CAST_AMBIENT   = 0.30
+CAST_DIFFUSE   = 0.75
+CAST_SPECULAR  = 0.00
+CAST_SPEC_POW  = 5.0
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Timepoint persistence (one vtkMRMLScriptedModuleNode per timepoint)
@@ -56,11 +63,13 @@ class OcclusionTimepoint:
     """Per-timepoint state stored as a vtkMRMLScriptedModuleNode.
     Persists with the .mrb scene file."""
 
-    _TAG   = "OcclusionAnalysis.isTimepoint"
-    _ORDER = "OcclusionAnalysis.order"
-    _LABEL = "OcclusionAnalysis.label"
-    _UPPER = "OcclusionAnalysis.upperModelID"
-    _LOWER = "OcclusionAnalysis.lowerModelID"
+    _TAG        = "OcclusionAnalysis.isTimepoint"
+    _ORDER      = "OcclusionAnalysis.order"
+    _LABEL      = "OcclusionAnalysis.label"
+    _UPPER      = "OcclusionAnalysis.upperModelID"
+    _LOWER      = "OcclusionAnalysis.lowerModelID"
+    _UPPER_CAST = "OcclusionAnalysis.upperCastID"
+    _LOWER_CAST = "OcclusionAnalysis.lowerCastID"
 
     def __init__(self, node):
         self._node = node
@@ -127,6 +136,33 @@ class OcclusionTimepoint:
     @lowerModel.setter
     def lowerModel(self, node):
         self._setModel(self._LOWER, node)
+
+    @property
+    def upperCast(self):
+        return self._getModel(self._UPPER_CAST)
+
+    @upperCast.setter
+    def upperCast(self, node):
+        self._setModel(self._UPPER_CAST, node)
+
+    @property
+    def lowerCast(self):
+        return self._getModel(self._LOWER_CAST)
+
+    @lowerCast.setter
+    def lowerCast(self, node):
+        self._setModel(self._LOWER_CAST, node)
+
+    @property
+    def upperDisplay(self):
+        """Cast node for display if available, else the original IOS model."""
+        c = self.upperCast
+        return c if c is not None else self.upperModel
+
+    @property
+    def lowerDisplay(self):
+        c = self.lowerCast
+        return c if c is not None else self.lowerModel
 
     def remove(self):
         slicer.mrmlScene.RemoveNode(self._node)
@@ -340,6 +376,13 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         )
         screenshotLayout.addRow(self._screenshotButton)
 
+        self._createCastsButton = qt.QPushButton("Create cast models")
+        self._createCastsButton.setToolTip(
+            "Build a trimmed orthodontic art base for each arch and show it in "
+            "the 3-D view. Runs automatically with 'Create occlusion maps'."
+        )
+        screenshotLayout.addRow(self._createCastsButton)
+
         self._reportButton = qt.QPushButton("Generate report")
         self._reportButton.setToolTip(
             "Write occlusion_analysis_report.md/.pdf/.odt to the output folder "
@@ -375,6 +418,7 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._butterflyViewCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
         self._lateralViewsCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
         self._screenshotButton.connect("clicked(bool)", self._onScreenshotClicked)
+        self._createCastsButton.connect("clicked(bool)", self._onCreateCastsClicked)
         self._reportButton.connect("clicked(bool)", self._onReportClicked)
         self._mapButton.connect("clicked(bool)", self._onMapClicked)
         self._runButton.connect("clicked(bool)", self._onRunClicked)
@@ -551,9 +595,11 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
 
     def _onUpperChanged(self, node, row):
         row["tp"].upperModel = node
+        self.logic.applyDentalCastMaterial(node)
 
     def _onLowerChanged(self, node, row):
         row["tp"].lowerModel = node
+        self.logic.applyDentalCastMaterial(node)
 
     def _onRemoveClicked(self, row):
         row["tp"].remove()
@@ -623,6 +669,17 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
                 normalizeZoom=pn.normalizeZoom,
             )
         slicer.util.infoDisplay(f"Screenshots saved to:\n{outputDir}")
+
+    def _onCreateCastsClicked(self):
+        timepoints = self._requireTimepoints(1)
+        if timepoints is None:
+            return
+        with slicer.util.tryWithErrorDisplay(_("Cast model creation failed."), waitCursor=True):
+            self.logic.createCastModels(timepoints)
+        slicer.util.infoDisplay(
+            f"Cast models created for {len(timepoints)} timepoint(s).",
+            autoCloseMsec=2000,
+        )
 
     def _onReportClicked(self):
         outputDir = self._screenshotDirSelector.currentPath
@@ -848,7 +905,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 all_lat = np.vstack([
                     vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
                     for tp in timepoints
-                    for m in (tp.upperModel, tp.lowerModel) if m
+                    for m in (tp.upperModel, tp.lowerModel,
+                              tp.upperCast,  tp.lowerCast) if m
                 ])
                 ctr = (all_lat.min(axis=0) + all_lat.max(axis=0)) / 2
                 cx, cy, cz = ctr
@@ -948,31 +1006,29 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         """
         import os, math
 
-        # Show all four nodes; hide everything else
+        # Show arches + cast bases + distance maps; hide everything else
         for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
             n  = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
             dn = n.GetDisplayNode()
             if dn:
                 dn.SetVisibility(False)
-        for node in (tp.upperModel, tp.lowerModel, upperMap, lowerMap):
+        for node in (tp.upperModel, tp.lowerModel,
+                     tp.upperCast, tp.lowerCast,
+                     upperMap, lowerMap):
             if node and node.GetDisplayNode():
                 node.GetDisplayNode().SetVisibility(True)
         self._setColorLegendVisibility(upperMap, showColorLegend)
         self._setColorLegendVisibility(lowerMap, showColorLegend)
 
-        # Combined bounds of both arches
-        b = [0.0] * 6
-        tp.upperModel.GetRASBounds(b)
-        lb = [0.0] * 6
-        tp.lowerModel.GetRASBounds(lb)
-        bounds = [
-            min(b[0], lb[0]), max(b[1], lb[1]),
-            min(b[2], lb[2]), max(b[3], lb[3]),
-            min(b[4], lb[4]), max(b[5], lb[5]),
-        ]
-        cx = (bounds[0] + bounds[1]) / 2
-        cy = (bounds[2] + bounds[3]) / 2
-        cz = (bounds[4] + bounds[5]) / 2
+        # Combined bounds of arch + cast base
+        disp = [m for m in (tp.upperModel, tp.lowerModel,
+                             tp.upperCast,  tp.lowerCast) if m]
+        disp_pts = np.vstack([vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
+                               for m in disp])
+        mn, mx = disp_pts.min(axis=0), disp_pts.max(axis=0)
+        cx = (mn[0] + mx[0]) / 2
+        cy = (mn[1] + mx[1]) / 2
+        cz = (mn[2] + mx[2]) / 2
         focal = (cx, cy, cz)
         viewUp = (0, 0, 1)
         D = 10000
@@ -997,7 +1053,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         viewAngle = renderer.GetActiveCamera().GetViewAngle()
         if precomputedCameras is None:
             pts_list = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
-                        for m in (tp.upperModel, tp.lowerModel) if m]
+                        for m in (tp.upperModel, tp.lowerModel,
+                                  tp.upperCast,  tp.lowerCast) if m]
             all_pts = np.vstack(pts_list)
 
         for suffix, camPos_rough in views:
@@ -1282,7 +1339,6 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         mesh (source→upper, Z shift +zOffset) and the upper mesh
         (source→lower, Z shift -zOffset so it moves away from the upper jaw).
         """
-        archColor = (0.902, 0.898, 0.871)   # #e6e5de
         print("\n=== Creating occlusion maps ===")
         for tp in timepoints:
             lower_poly = self._getTriangulated(tp.lowerModel)
@@ -1304,9 +1360,9 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 thresholdRange=thresholdRange,
             )
             for model in (tp.upperModel, tp.lowerModel):
-                dn = model.GetDisplayNode()
-                if dn:
-                    dn.SetColor(*archColor)
+                self.applyDentalCastMaterial(model)
+
+        self.createCastModels(timepoints)
         print(f"Done. {len(timepoints) * 2} occlusion map(s) in scene.")
 
     def _createSingleOcclusionMap(self, source_poly, target_poly, source_model,
@@ -1677,6 +1733,294 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             cols["dOAS_robust"].SetValue(i, str(row["dOAS_robust"]))
             cols["verdict"].SetValue(i, row["verdict"])
         node.Modified()
+
+    # ── Display helpers ───────────────────────────────────────────────────
+
+    @staticmethod
+    def applyDentalCastMaterial(model_node):
+        """Give a model node a plaster-cast look: warm white, matte surface."""
+        if model_node is None:
+            return
+        model_node.CreateDefaultDisplayNodes()
+        dn = model_node.GetDisplayNode()
+        if dn is None:
+            return
+        dn.SetColor(*CAST_COLOR)
+        dn.SetAmbient(CAST_AMBIENT)
+        dn.SetDiffuse(CAST_DIFFUSE)
+        dn.SetSpecular(CAST_SPECULAR)
+        dn.SetPower(CAST_SPEC_POW)
+
+    def createCastModels(self, timepoints):
+        """Build (or rebuild) trimmed art-base nodes for all timepoints."""
+        for tp in timepoints:
+            if not tp.upperModel and not tp.lowerModel:
+                continue
+            # Compute combined XY envelope so both arches share one footprint
+            raw_bounds = [float('inf'), float('-inf'), float('inf'), float('-inf')]
+            for m in (tp.upperModel, tp.lowerModel):
+                if m is None:
+                    continue
+                b = [0.0] * 6
+                m.GetPolyData().GetBounds(b)
+                raw_bounds[0] = min(raw_bounds[0], b[0])
+                raw_bounds[1] = max(raw_bounds[1], b[1])
+                raw_bounds[2] = min(raw_bounds[2], b[2])
+                raw_bounds[3] = max(raw_bounds[3], b[3])
+            if tp.upperModel:
+                tp.upperCast = self._createCastNode(tp.upperModel, jaw='upper', xy_bounds=raw_bounds)
+            if tp.lowerModel:
+                tp.lowerCast = self._createCastNode(tp.lowerModel, jaw='lower', xy_bounds=raw_bounds)
+
+    @staticmethod
+    def _buildCastPolyData(poly_data, jaw='lower', prism_height=5.0, margin=2.5,
+                           xy_bounds=None):
+        """Build cast geometry: gingival walls + trimmed-cast base prism.
+
+        Stage 1 – Walls: extrude the largest boundary loop straight to
+          1 mm beyond the model's extreme vertex.
+        Stage 2 – Base prism: footprint follows orthodontic trimming convention:
+            upper jaw – pointed anterior (narrows to midline tip),
+                        chamfered posterior-lateral corners
+            lower jaw – flat anterior between canine positions,
+                        chamfered posterior-lateral corners
+
+        xy_bounds: [xmin,xmax,ymin,ymax] from combined upper+lower bounds so
+          both arches share one identical footprint.
+
+        jaw='upper' → walls/prism extend superior (+Z)
+        jaw='lower' → walls/prism extend inferior (−Z)
+        """
+        # ── Model bounds (Z from individual model) ────────────────────────
+        bounds = [0.0] * 6
+        poly_data.GetBounds(bounds)
+
+        if jaw == 'upper':
+            z_wall = bounds[5] + 1.0
+            z_face = z_wall + prism_height
+        else:
+            z_wall = bounds[4] - 1.0
+            z_face = z_wall - prism_height
+
+        # ── Footprint (shared XY envelope when xy_bounds is provided) ─────
+        xb0, xb1, yb0, yb1 = (
+            (xy_bounds[0], xy_bounds[1], xy_bounds[2], xy_bounds[3])
+            if xy_bounds is not None
+            else (bounds[0], bounds[1], bounds[2], bounds[3])
+        )
+        xmid   = (xb0 + xb1) / 2.0
+        xhalf  = (xb1 - xb0) / 2.0 + margin
+        ymin_b = yb0 - margin
+        ymax_b = yb1 + margin
+
+        distal_cham = xhalf * 0.28
+        ant_taper   = (ymax_b - ymin_b) * 0.18   # set-back of the canine shoulder from the apex
+        y_canine    = ymax_b - ant_taper
+        x_canine    = xhalf * 0.62
+
+        # The posterolateral extent is pushed further out than xhalf so that the
+        # diagonal from xhalf_post (posterolateral) to x_canine (canine shoulder)
+        # passes through xhalf at its midpoint, enclosing the molar-level walls.
+        xhalf_post  = xhalf + (xhalf - x_canine - 10)  # mirror of the anterior narrowing
+
+        arc_n = 24
+        shape = [
+            [xmid - xhalf_post + distal_cham, ymin_b               ],  # post chamfer left
+            [xmid + xhalf_post - distal_cham, ymin_b               ],  # post chamfer right
+            [xmid + xhalf_post,               ymin_b + distal_cham ],  # post-right (chamfer end)
+            [xmid + x_canine,                 y_canine             ],  # canine-right
+        ]
+
+        if jaw == 'upper':
+            shape.append([xmid, ymax_b])  # V-tip at midline
+        else:
+            # Parabolic arc; interior points only (endpoints are the canine vertices)
+            for k in range(1, arc_n):
+                x_norm = 1.0 - 2.0 * k / arc_n   # sweeps +1 → -1
+                x = xmid + x_canine * x_norm
+                y = y_canine + (ymax_b - y_canine) * (1.0 - x_norm ** 2)
+                shape.append([x, y])
+
+        shape += [
+            [xmid - x_canine,              y_canine             ],  # canine-left
+            [xmid - xhalf_post,            ymin_b + distal_cham ],  # post-left (chamfer end)
+        ]
+
+        shape_xy = np.array(shape)
+        n_hex = len(shape_xy)
+
+        # ── Extract boundary edges ────────────────────────────────────────
+        bfe = vtk.vtkFeatureEdges()
+        bfe.SetInputData(poly_data)
+        bfe.BoundaryEdgesOn()
+        bfe.FeatureEdgesOff()
+        bfe.ManifoldEdgesOff()
+        bfe.NonManifoldEdgesOff()
+        bfe.Update()
+        bpd = bfe.GetOutput()
+
+        def _order_loops(pd):
+            n_cells = pd.GetNumberOfCells()
+            pts     = pd.GetPoints()
+            if n_cells == 0 or pts is None:
+                return []
+            adj = {}
+            for i in range(n_cells):
+                c  = pd.GetCell(i)
+                p0 = c.GetPointId(0)
+                p1 = c.GetPointId(1)
+                adj.setdefault(p0, []).append(p1)
+                adj.setdefault(p1, []).append(p0)
+            visited = set()
+            loops   = []
+            for start in adj:
+                if start in visited:
+                    continue
+                loop = [start]
+                visited.add(start)
+                prev, cur = -1, start
+                while True:
+                    nxt = next(
+                        (n for n in adj.get(cur, []) if n != prev and n not in visited),
+                        None,
+                    )
+                    if nxt is None:
+                        break
+                    loop.append(nxt)
+                    visited.add(nxt)
+                    prev, cur = cur, nxt
+                if len(loop) > 2:
+                    loops.append(np.array([pts.GetPoint(i) for i in loop]))
+            return loops
+
+        loops = _order_loops(bpd)
+
+        # ── Stage 1: walls from gingival boundary to z_wall ──────────────
+        wall_pd = vtk.vtkPolyData()
+        if loops:
+            ring  = max(loops, key=len)
+            n_v   = len(ring)
+            top_ring = ring.copy()
+            top_ring[:, 2] = z_wall
+
+            # Signed area of the boundary loop projected to XY.
+            # Positive = CCW when viewed from +Z.
+            xy = ring[:, :2]
+            signed_area = 0.5 * (
+                np.sum(xy[:-1, 0] * xy[1:, 1] - xy[1:, 0] * xy[:-1, 1])
+                + (xy[-1, 0] * xy[0, 1] - xy[0, 0] * xy[-1, 1])
+            )
+            loop_ccw = signed_area > 0
+
+            # Upper jaw extrudes +Z: CCW loop → outward with standard winding.
+            # Lower jaw extrudes -Z: CCW loop → inward → must flip.
+            flip = loop_ccw if jaw == 'lower' else not loop_ccw
+            wall_tris = [(0, 2, 1), (0, 3, 2)] if flip else [(0, 1, 2), (0, 2, 3)]
+
+            wpts   = vtk.vtkPoints()
+            wcells = vtk.vtkCellArray()
+            arch_ids = [wpts.InsertNextPoint(*p) for p in ring]
+            top_ids  = [wpts.InsertNextPoint(*p) for p in top_ring]
+            for i in range(n_v):
+                j   = (i + 1) % n_v
+                idx = [arch_ids[i], arch_ids[j], top_ids[j], top_ids[i]]
+                for ti in wall_tris:
+                    t = vtk.vtkTriangle()
+                    for k, v in enumerate(ti):
+                        t.GetPointIds().SetId(k, idx[v])
+                    wcells.InsertNextCell(t)
+            wall_pd.SetPoints(wpts)
+            wall_pd.SetPolys(wcells)
+
+        # Smooth normals for the organic wall surface
+        wall_nrmls = vtk.vtkPolyDataNormals()
+        wall_nrmls.SetInputData(wall_pd)
+        wall_nrmls.SplittingOn()
+        wall_nrmls.SetFeatureAngle(60.0)
+        wall_nrmls.Update()
+
+        # ── Stage 2: closed 3-D hex prism with flat (per-face) shading ───
+        # Build as a single watertight solid so AutoOrientNormals works.
+        hex_pts   = vtk.vtkPoints()
+        hex_cells = vtk.vtkCellArray()
+        # 6 arch-facing vertices + 6 exterior vertices
+        w_ids = [hex_pts.InsertNextPoint(x, y, z_wall) for x, y in shape_xy]
+        f_ids = [hex_pts.InsertNextPoint(x, y, z_face) for x, y in shape_xy]
+
+        def _cap_polygon(ids):
+            pg = vtk.vtkPolygon()
+            pg.GetPointIds().SetNumberOfIds(len(ids))
+            for k, pid in enumerate(ids):
+                pg.GetPointIds().SetId(k, pid)
+            hex_cells.InsertNextCell(pg)
+
+        _cap_polygon(w_ids)          # arch-facing cap
+        _cap_polygon(f_ids[::-1])    # exterior cap (reversed = outward normal)
+
+        for i in range(n_hex):
+            j = (i + 1) % n_hex
+            # Standard winding for hex CCW from above + upper jaw (+Z)
+            # Lower jaw needs flip because dz is negative
+            if jaw == 'lower':
+                quad_ids = [w_ids[i], w_ids[j], f_ids[j], f_ids[i]]
+                quad_tris = [(0, 2, 1), (0, 3, 2)]
+            else:
+                quad_ids = [w_ids[i], w_ids[j], f_ids[j], f_ids[i]]
+                quad_tris = [(0, 1, 2), (0, 2, 3)]
+            for ti in quad_tris:
+                t = vtk.vtkTriangle()
+                for k, v in enumerate(ti):
+                    t.GetPointIds().SetId(k, quad_ids[v])
+                hex_cells.InsertNextCell(t)
+
+        hex_solid = vtk.vtkPolyData()
+        hex_solid.SetPoints(hex_pts)
+        hex_solid.SetPolys(hex_cells)
+
+        tri_hex = vtk.vtkTriangleFilter()
+        tri_hex.SetInputData(hex_solid)
+        tri_hex.Update()
+
+        clean_hex = vtk.vtkCleanPolyData()
+        clean_hex.SetInputData(tri_hex.GetOutput())
+        clean_hex.SetTolerance(0.01)
+        clean_hex.Update()
+
+        # Per-face (flat) normals: feature angle near 0 splits every edge
+        hex_nrmls = vtk.vtkPolyDataNormals()
+        hex_nrmls.SetInputData(clean_hex.GetOutput())
+        hex_nrmls.ConsistencyOn()
+        hex_nrmls.AutoOrientNormalsOn()
+        hex_nrmls.SplittingOn()
+        hex_nrmls.SetFeatureAngle(1.0)
+        hex_nrmls.Update()
+
+        # ── Combine walls + prism ─────────────────────────────────────────
+        final = vtk.vtkAppendPolyData()
+        final.AddInputData(wall_nrmls.GetOutput())
+        final.AddInputData(hex_nrmls.GetOutput())
+        final.Update()
+
+        return final.GetOutput()
+
+    def _createCastNode(self, source_model, jaw='lower', xy_bounds=None):
+        """Build (or rebuild) a closed cast model node from an open IOS arch."""
+        name = f"{source_model.GetName()}_cast"
+        node = slicer.mrmlScene.GetFirstNodeByName(name)
+        if node is None:
+            node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", name)
+        node.SetAndObservePolyData(
+            self._buildCastPolyData(source_model.GetPolyData(), jaw=jaw, xy_bounds=xy_bounds)
+        )
+        node.CreateDefaultDisplayNodes()
+        self.applyDentalCastMaterial(node)
+        # Place next to the source model in the subject hierarchy
+        shNode = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+        src_item  = shNode.GetItemByDataNode(source_model)
+        cast_item = shNode.GetItemByDataNode(node)
+        if src_item and cast_item:
+            shNode.SetItemParent(cast_item, shNode.GetItemParent(src_item))
+        return node
 
     # ── Report generation ─────────────────────────────────────────────────
 
