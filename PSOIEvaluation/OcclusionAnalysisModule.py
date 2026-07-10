@@ -48,7 +48,7 @@ OCCMAP_THRESHOLD    = (0.0, 0.2)   # mm  – hide points outside this range (uns
 OCCMAP_Z_OFFSET     = 0.1          # mm  – shift along Z to avoid z-fighting
 
 # Dental plaster-cast material — warm white, matte
-CAST_COLOR     = (0.960, 0.945, 0.910)
+CAST_COLOR     = (0.96, 0.90, 0.80)
 CAST_AMBIENT   = 0.30
 CAST_DIFFUSE   = 0.75
 CAST_SPECULAR  = 0.00
@@ -836,6 +836,18 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             if dn:
                 origVisibility[n.GetID()] = dn.GetVisibility()
 
+        # Ensure no subject hierarchy folder hides nodes we intend to show.
+        # Save every item's visibility and make all items visible so that
+        # per-node display-node visibility is the sole gating factor.
+        shNode = slicer.vtkMRMLSubjectHierarchyNode.GetSubjectHierarchyNode(slicer.mrmlScene)
+        origShVisibility = {}
+        shChildIds = vtk.vtkIdList()
+        shNode.GetItemChildren(shNode.GetSceneItemID(), shChildIds, True)
+        for _k in range(shChildIds.GetNumberOfIds()):
+            _item = shChildIds.GetId(_k)
+            origShVisibility[_item] = shNode.GetItemDisplayVisibility(_item)
+            shNode.SetItemDisplayVisibility(_item, True)
+
         # ── Pre-compute shared butterfly hinge ────────────────────────────
         # Posterior border of the upper model with the largest AP extent,
         # so all timepoints fold around the same axis for direct comparison.
@@ -861,8 +873,9 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
 
         if normalizeZoom and len(timepoints) > 1:
             if takeOcclusalViews:
-                upper_pts = [vtk_to_numpy(tp.upperModel.GetPolyData().GetPoints().GetData())
-                             for tp in timepoints if tp.upperModel]
+                upper_pts = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
+                             for tp in timepoints
+                             for m in (tp.upperModel, tp.upperCast) if m]
                 if upper_pts:
                     all_u  = np.vstack(upper_pts)
                     ctr    = (all_u.min(axis=0) + all_u.max(axis=0)) / 2
@@ -870,8 +883,9 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                         all_u, tuple(ctr + [0, 0, -D]), tuple(ctr), (0, 1, 0), viewAngle, aspect)
                     globalUpperCam = (f, c, (0, 1, 0))
 
-                lower_pts = [vtk_to_numpy(tp.lowerModel.GetPolyData().GetPoints().GetData())
-                             for tp in timepoints if tp.lowerModel]
+                lower_pts = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
+                             for tp in timepoints
+                             for m in (tp.lowerModel, tp.lowerCast) if m]
                 if lower_pts:
                     all_l  = np.vstack(lower_pts)
                     ctr    = (all_l.min(axis=0) + all_l.max(axis=0)) / 2
@@ -938,7 +952,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 # Upper jaw: camera from inferior (looking +Z upward)
                 focal, camPos, viewUp = self._setupViewForModel(
                     tp.upperModel, upperMap, threeDView, lookFromInferior=True,
-                    size=screenshotSize
+                    size=screenshotSize, castModel=tp.upperCast
                 )
                 if globalUpperCam:
                     focal, camPos, viewUp = globalUpperCam
@@ -951,7 +965,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 # Lower jaw: camera from superior (looking −Z downward)
                 focal, camPos, viewUp = self._setupViewForModel(
                     tp.lowerModel, lowerMap, threeDView, lookFromInferior=False,
-                    size=screenshotSize
+                    size=screenshotSize, castModel=tp.lowerCast
                 )
                 if globalLowerCam:
                     focal, camPos, viewUp = globalLowerCam
@@ -980,6 +994,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 )
 
         self._restoreAllVisibility(origVisibility)
+        for _item, _vis in origShVisibility.items():
+            shNode.SetItemDisplayVisibility(_item, min(1, _vis))
         print("Done.")
 
     def _setColorLegendVisibility(self, distMapNode, visible):
@@ -1136,15 +1152,15 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         return focal, camPos, viewUp
 
     def _setupViewForModel(self, archModel, distMapModel, threeDView, lookFromInferior,
-                           size=(1, 1)):
-        """Hide everything, show archModel + distMapModel.
+                           size=(1, 1), castModel=None):
+        """Hide everything, show archModel + distMapModel + optional castModel.
         Returns (focal, camPos, viewUp) — caller passes these to _captureTransparent."""
         for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
             n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
             dn = n.GetDisplayNode()
             if dn:
                 dn.SetVisibility(False)
-        for node in (archModel, distMapModel):
+        for node in (archModel, distMapModel, castModel):
             if node and node.GetDisplayNode():
                 node.GetDisplayNode().SetVisibility(True)
 
@@ -1154,7 +1170,27 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         cy = (bounds[2] + bounds[3]) / 2
         cz = (bounds[4] + bounds[5]) / 2
 
-        return self._fitCamera(threeDView, cx, cy, cz, lookFromInferior, archModel, size)
+        # Fit camera to arch + cast combined so the wider base is fully in frame
+        pts_list = [vtk_to_numpy(archModel.GetPolyData().GetPoints().GetData())]
+        if castModel:
+            pts_list.append(vtk_to_numpy(castModel.GetPolyData().GetPoints().GetData()))
+        all_pts = np.vstack(pts_list)
+
+        renderer  = threeDView.renderWindow().GetRenderers().GetFirstRenderer()
+        viewAngle = renderer.GetActiveCamera().GetViewAngle()
+        D = 10000
+        if lookFromInferior:
+            rough_cam = (cx, cy, cz - D)
+            viewUp    = (0, 1, 0)
+        else:
+            rough_cam = (cx, cy, cz + D)
+            viewUp    = (0, -1, 0)
+
+        focal, camPos = self._fitCameraToMeshPoints(
+            all_pts, rough_cam, (cx, cy, cz), viewUp, viewAngle,
+            aspect=size[0] / size[1]
+        )
+        return focal, camPos, viewUp
 
     def _takeButterflyScreenshot(self, tp, upperMap, lowerMap, threeDView, path,
                                   size=(500, 500), precomputedCamera=None, hinge=None):
