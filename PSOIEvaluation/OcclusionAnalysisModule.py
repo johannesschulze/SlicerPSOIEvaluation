@@ -198,13 +198,18 @@ class OcclusionAnalysisModuleParameterNode:
     primaryTau        : float = DEFAULT_TAU
     nSectors          : int   = DEFAULT_N_SECTORS
     minArea           : float = DEFAULT_MIN_AREA
-    screenshotDir     : str   = ""
-    screenshotSize    : int   = 1000
-    showColorLegend   : bool  = True
-    normalizeZoom     : bool  = True
-    takeOcclusalViews : bool  = True
-    takeButterflyView : bool  = True
-    takeLateralViews  : bool  = False
+    screenshotDir      : str   = ""
+    screenshotSize     : int   = 1000
+    normalizeZoom      : bool  = True
+    occlusalCapture    : bool  = True
+    occlusalShowCast   : bool  = True
+    occlusalShowLegend : bool  = True
+    butterflyCapture   : bool  = True
+    butterflyShowCast  : bool  = False
+    butterflyShowLegend: bool  = True
+    buccalCapture      : bool  = False
+    buccalShowCast     : bool  = True
+    buccalShowLegend   : bool  = False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -307,6 +312,23 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         )
         orientLayout.addWidget(self._registerButton)
 
+        # ── Run-Analysis-Button ───────────────────────────────────────────
+        self.layout.addSpacing(20)
+        self._runButton = qt.QPushButton("Run analysis!")
+        self._runButton.setStyleSheet("font-weight: bold; padding: 6px;")
+        self.layout.addWidget(self._runButton)
+        self.layout.addSpacing(20)
+
+        # ── Create Occlusion Maps Button ──────────────────────────────────
+        self._mapButton = qt.QPushButton("Create occlusion maps")
+        self._mapButton.setStyleSheet("padding: 6px;")
+        self._mapButton.setToolTip(
+            "For each timepoint: compute lower→upper signed distance, create a "
+            "colorized model node (scalar range 0–0.1 mm, threshold ±0.2 mm)."
+        )
+        self.layout.addWidget(self._mapButton)
+        self.layout.addSpacing(20)
+        
         # ── Screenshots ───────────────────────────────────────────────────
         screenshotGroup = ctk.ctkCollapsibleButton()
         screenshotGroup.text = "Screenshots"
@@ -319,31 +341,46 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._screenshotDirSelector.setToolTip("Folder to save screenshots into.")
         screenshotLayout.addRow("Output folder:", self._screenshotDirSelector)
 
-        screenshotLayout.addRow(qt.QLabel("Views to capture:"))
+        # ── Per-view options table  (Capture / Show cast / Show legend) ──
+        _viewOptWidget = qt.QWidget()
+        _viewOptLayout = qt.QGridLayout(_viewOptWidget)
+        _viewOptLayout.setContentsMargins(0, 2, 0, 2)
+        _viewOptLayout.setSpacing(4)
 
-        self._occlusalViewsCheckBox = qt.QCheckBox("Occlusal (upper inferior / lower superior)")
-        self._occlusalViewsCheckBox.setChecked(True)
-        self._occlusalViewsCheckBox.setToolTip(
-            "Upper jaw from inferior view + lower jaw from superior view."
-        )
-        screenshotLayout.addRow("", self._occlusalViewsCheckBox)
+        for _col, _hdr in enumerate(["", "Capture", "Show cast", "Show legend"]):
+            _lbl = qt.QLabel(_hdr)
+            _lbl.setAlignment(qt.Qt.AlignCenter)
+            _viewOptLayout.addWidget(_lbl, 0, _col)
 
-        self._butterflyViewCheckBox = qt.QCheckBox("Butterfly (combined occlusal)")
-        self._butterflyViewCheckBox.setChecked(True)
-        self._butterflyViewCheckBox.setToolTip(
-            "Combined image: lower jaw rotated 180° around the LR axis posterior "
-            "to the upper jaw, placed below the upper jaw."
-        )
-        screenshotLayout.addRow("", self._butterflyViewCheckBox)
+        self._occlusalCaptureCB   = qt.QCheckBox(); self._occlusalCaptureCB.setChecked(True)
+        self._occlusalCastCB      = qt.QCheckBox(); self._occlusalCastCB.setChecked(True)
+        self._occlusalLegendCB    = qt.QCheckBox(); self._occlusalLegendCB.setChecked(True)
+        self._butterflyCaptureCB  = qt.QCheckBox(); self._butterflyCaptureCB.setChecked(True)
+        self._butterflyCastCB     = qt.QCheckBox(); self._butterflyCastCB.setChecked(False)
+        self._butterflyLegendCB   = qt.QCheckBox(); self._butterflyLegendCB.setChecked(True)
+        self._buccalCaptureCB     = qt.QCheckBox(); self._buccalCaptureCB.setChecked(False)
+        self._buccalCastCB        = qt.QCheckBox(); self._buccalCastCB.setChecked(True)
+        self._buccalLegendCB      = qt.QCheckBox(); self._buccalLegendCB.setChecked(False)
 
-        self._lateralViewsCheckBox = qt.QCheckBox(
-            "Buccal (anterior, posterior, left, right, oblique left, oblique right)"
-        )
-        self._lateralViewsCheckBox.setChecked(False)
-        self._lateralViewsCheckBox.setToolTip(
-            "Six buccal views showing both jaws in occlusion."
-        )
-        screenshotLayout.addRow("", self._lateralViewsCheckBox)
+        _viewRows = [
+            ("Occlusal",
+             self._occlusalCaptureCB,  self._occlusalCastCB,  self._occlusalLegendCB),
+            ("Butterfly",
+             self._butterflyCaptureCB, self._butterflyCastCB, self._butterflyLegendCB),
+            ("Buccal",
+             self._buccalCaptureCB,    self._buccalCastCB,    self._buccalLegendCB),
+        ]
+        for _row, (_label, *_cbs) in enumerate(_viewRows, start=1):
+            _viewOptLayout.addWidget(qt.QLabel(_label), _row, 0)
+            for _col, _cb in enumerate(_cbs, start=1):
+                _wrap = qt.QWidget()
+                _wl   = qt.QHBoxLayout(_wrap)
+                _wl.setContentsMargins(0, 0, 0, 0)
+                _wl.setAlignment(qt.Qt.AlignCenter)
+                _wl.addWidget(_cb)
+                _viewOptLayout.addWidget(_wrap, _row, _col)
+
+        screenshotLayout.addRow(_viewOptWidget)
 
         self._screenshotSizeSpinBox = qt.QSpinBox()
         self._screenshotSizeSpinBox.setMinimum(100)
@@ -354,13 +391,6 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._screenshotSizeSpinBox.setToolTip("Width and height of each output PNG.")
         screenshotLayout.addRow("Resolution:", self._screenshotSizeSpinBox)
 
-        self._showColorLegendCheckBox = qt.QCheckBox("Show color legend")
-        self._showColorLegendCheckBox.setChecked(True)
-        self._showColorLegendCheckBox.setToolTip(
-            "Include the distance color legend in each screenshot."
-        )
-        screenshotLayout.addRow("", self._showColorLegendCheckBox)
-
         self._normalizeZoomCheckBox = qt.QCheckBox("Normalize zoom within groups")
         self._normalizeZoomCheckBox.setChecked(True)
         self._normalizeZoomCheckBox.setToolTip(
@@ -369,13 +399,6 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         )
         screenshotLayout.addRow("", self._normalizeZoomCheckBox)
 
-        self._screenshotButton = qt.QPushButton("Take screenshots")
-        self._screenshotButton.setToolTip(
-            "For each timepoint: upper jaw (inferior view) + lower jaw (superior "
-            "view, rolled 180°), transparent PNG background."
-        )
-        screenshotLayout.addRow(self._screenshotButton)
-
         self._createCastsButton = qt.QPushButton("Create cast models")
         self._createCastsButton.setToolTip(
             "Build a trimmed orthodontic art base for each arch and show it in "
@@ -383,28 +406,24 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         )
         screenshotLayout.addRow(self._createCastsButton)
 
+        self._screenshotButton = qt.QPushButton("Take screenshots")
+        self._screenshotButton.setToolTip(
+            "For each timepoint: upper jaw (inferior view) + lower jaw (superior "
+            "view, rolled 180°), transparent PNG background."
+        )
+        screenshotLayout.addRow(self._screenshotButton)
+
+        
+
         self._reportButton = qt.QPushButton("Generate report")
         self._reportButton.setToolTip(
             "Write occlusion_analysis_report.md/.pdf/.odt to the output folder "
             "(requires pandoc; PDF also requires xelatex)."
         )
-        screenshotLayout.addRow(self._reportButton)
-
-        # ── Buttons ───────────────────────────────────────────────────────
-        self._mapButton = qt.QPushButton("Create occlusion maps")
-        self._mapButton.setStyleSheet("padding: 6px;")
-        self._mapButton.setToolTip(
-            "For each timepoint: compute lower→upper signed distance, create a "
-            "colorized model node (scalar range 0–0.1 mm, threshold ±0.2 mm)."
-        )
-        self.layout.addWidget(self._mapButton)
-
-        self._runButton = qt.QPushButton("Run analysis")
-        self._runButton.setStyleSheet("font-weight: bold; padding: 6px;")
-        self.layout.addWidget(self._runButton)
+        screenshotLayout.addRow(self._reportButton)      
 
         self.layout.addStretch(1)
-
+        
         # ── Connections ───────────────────────────────────────────────────
         self._addTimepointButton.connect("clicked(bool)", self._onAddTimepointClicked)
         self._orientT0Button.connect("clicked(bool)", self._onOrientT0Clicked)
@@ -412,11 +431,13 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._registerButton.connect("clicked(bool)", self._onRegisterClicked)
         self._screenshotDirSelector.connect("currentPathChanged(QString)", self._onScreenshotDirChanged)
         self._screenshotSizeSpinBox.connect("valueChanged(int)", self._onScreenshotSettingChanged)
-        self._showColorLegendCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
         self._normalizeZoomCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
-        self._occlusalViewsCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
-        self._butterflyViewCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
-        self._lateralViewsCheckBox.connect("toggled(bool)", self._onScreenshotSettingChanged)
+        for _cb in (
+            self._occlusalCaptureCB,  self._occlusalCastCB,  self._occlusalLegendCB,
+            self._butterflyCaptureCB, self._butterflyCastCB, self._butterflyLegendCB,
+            self._buccalCaptureCB,    self._buccalCastCB,    self._buccalLegendCB,
+        ):
+            _cb.connect("toggled(bool)", self._onScreenshotSettingChanged)
         self._screenshotButton.connect("clicked(bool)", self._onScreenshotClicked)
         self._createCastsButton.connect("clicked(bool)", self._onCreateCastsClicked)
         self._reportButton.connect("clicked(bool)", self._onReportClicked)
@@ -490,11 +511,16 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         self._screenshotSizeSpinBox.setValue(pn.screenshotSize)
         self._screenshotSizeSpinBox.blockSignals(False)
         for widget, attr in (
-            (self._showColorLegendCheckBox,   "showColorLegend"),
             (self._normalizeZoomCheckBox,     "normalizeZoom"),
-            (self._occlusalViewsCheckBox,     "takeOcclusalViews"),
-            (self._butterflyViewCheckBox,     "takeButterflyView"),
-            (self._lateralViewsCheckBox,      "takeLateralViews"),
+            (self._occlusalCaptureCB,         "occlusalCapture"),
+            (self._occlusalCastCB,            "occlusalShowCast"),
+            (self._occlusalLegendCB,          "occlusalShowLegend"),
+            (self._butterflyCaptureCB,        "butterflyCapture"),
+            (self._butterflyCastCB,           "butterflyShowCast"),
+            (self._butterflyLegendCB,         "butterflyShowLegend"),
+            (self._buccalCaptureCB,           "buccalCapture"),
+            (self._buccalCastCB,              "buccalShowCast"),
+            (self._buccalLegendCB,            "buccalShowLegend"),
         ):
             widget.blockSignals(True)
             widget.setChecked(getattr(pn, attr))
@@ -514,12 +540,17 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
     def _onScreenshotSettingChanged(self, *_):
         if self._parameterNode is not None:
             pn = self._parameterNode
-            pn.screenshotSize      = self._screenshotSizeSpinBox.value
-            pn.showColorLegend     = self._showColorLegendCheckBox.isChecked()
-            pn.normalizeZoom       = self._normalizeZoomCheckBox.isChecked()
-            pn.takeOcclusalViews   = self._occlusalViewsCheckBox.isChecked()
-            pn.takeButterflyView   = self._butterflyViewCheckBox.isChecked()
-            pn.takeLateralViews    = self._lateralViewsCheckBox.isChecked()
+            pn.screenshotSize       = self._screenshotSizeSpinBox.value
+            pn.normalizeZoom        = self._normalizeZoomCheckBox.isChecked()
+            pn.occlusalCapture      = self._occlusalCaptureCB.isChecked()
+            pn.occlusalShowCast     = self._occlusalCastCB.isChecked()
+            pn.occlusalShowLegend   = self._occlusalLegendCB.isChecked()
+            pn.butterflyCapture     = self._butterflyCaptureCB.isChecked()
+            pn.butterflyShowCast    = self._butterflyCastCB.isChecked()
+            pn.butterflyShowLegend  = self._butterflyLegendCB.isChecked()
+            pn.buccalCapture        = self._buccalCaptureCB.isChecked()
+            pn.buccalShowCast       = self._buccalCastCB.isChecked()
+            pn.buccalShowLegend     = self._buccalLegendCB.isChecked()
 
     # ── Timepoint rows ────────────────────────────────────────────────────
 
@@ -661,11 +692,16 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             self.logic.takeScreenshots(
                 timepoints,
                 outputDir,
-                takeOcclusalViews=pn.takeOcclusalViews,
-                takeButterflyView=pn.takeButterflyView,
-                takeLateralViews=pn.takeLateralViews,
+                occlusalCapture=pn.occlusalCapture,
+                occlusalShowCast=pn.occlusalShowCast,
+                occlusalShowLegend=pn.occlusalShowLegend,
+                butterflyCapture=pn.butterflyCapture,
+                butterflyShowCast=pn.butterflyShowCast,
+                butterflyShowLegend=pn.butterflyShowLegend,
+                buccalCapture=pn.buccalCapture,
+                buccalShowCast=pn.buccalShowCast,
+                buccalShowLegend=pn.buccalShowLegend,
                 screenshotSize=size,
-                showColorLegend=pn.showColorLegend,
                 normalizeZoom=pn.normalizeZoom,
             )
         slicer.util.infoDisplay(f"Screenshots saved to:\n{outputDir}")
@@ -818,8 +854,10 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
     # ── Screenshots ──────────────────────────────────────────────────────────
 
     def takeScreenshots(self, timepoints, outputDir,
-                        takeOcclusalViews=True, takeButterflyView=True, takeLateralViews=False,
-                        screenshotSize=(500, 500), showColorLegend=True, normalizeZoom=True):
+                        occlusalCapture=True,   occlusalShowCast=True,   occlusalShowLegend=True,
+                        butterflyCapture=True,  butterflyShowCast=False, butterflyShowLegend=True,
+                        buccalCapture=False,    buccalShowCast=True,     buccalShowLegend=False,
+                        screenshotSize=(500, 500), normalizeZoom=True):
         import os, math
         threeDWidget = slicer.app.layoutManager().threeDWidget(0)
         threeDView   = threeDWidget.threeDView()
@@ -852,7 +890,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         # Posterior border of the upper model with the largest AP extent,
         # so all timepoints fold around the same axis for direct comparison.
         sharedButterflyHinge = None   # (cy_hinge, cz_hinge)
-        if takeButterflyView and len(timepoints) > 1:
+        if butterflyCapture and len(timepoints) > 1:
             best_ap, best_b = -1.0, None
             for tp in timepoints:
                 if tp.upperModel:
@@ -872,20 +910,20 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         globalLateralCams  = None   # dict: suffix → (focal, camPos, viewUp)
 
         if normalizeZoom and len(timepoints) > 1:
-            if takeOcclusalViews:
-                upper_pts = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
-                             for tp in timepoints
-                             for m in (tp.upperModel, tp.upperCast) if m]
+            if occlusalCapture:
+                upper_pts = []
+                lower_pts = []
+                for tp in timepoints:
+                    for m in ([tp.upperModel] + ([tp.upperCast] if occlusalShowCast else [])):
+                        if m: upper_pts.append(vtk_to_numpy(m.GetPolyData().GetPoints().GetData()))
+                    for m in ([tp.lowerModel] + ([tp.lowerCast] if occlusalShowCast else [])):
+                        if m: lower_pts.append(vtk_to_numpy(m.GetPolyData().GetPoints().GetData()))
                 if upper_pts:
                     all_u  = np.vstack(upper_pts)
                     ctr    = (all_u.min(axis=0) + all_u.max(axis=0)) / 2
                     f, c   = self._fitCameraToMeshPoints(
                         all_u, tuple(ctr + [0, 0, -D]), tuple(ctr), (0, 1, 0), viewAngle, aspect)
                     globalUpperCam = (f, c, (0, 1, 0))
-
-                lower_pts = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
-                             for tp in timepoints
-                             for m in (tp.lowerModel, tp.lowerCast) if m]
                 if lower_pts:
                     all_l  = np.vstack(lower_pts)
                     ctr    = (all_l.min(axis=0) + all_l.max(axis=0)) / 2
@@ -893,7 +931,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                         all_l, tuple(ctr + [0, 0, D]), tuple(ctr), (0, -1, 0), viewAngle, aspect)
                     globalLowerCam = (f, c, (0, -1, 0))
 
-            if takeButterflyView and sharedButterflyHinge:
+            if butterflyCapture and sharedButterflyHinge:
                 cy_h, cz_h = sharedButterflyHinge
                 all_bf = []
                 for tp in timepoints:
@@ -906,6 +944,13 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                     pts_l_xfm = (m_np @ np.hstack(
                         [pts_l, np.ones((len(pts_l), 1))]).T).T[:, :3]
                     all_bf.extend([pts_u, pts_l_xfm])
+                    if butterflyShowCast:
+                        if tp.upperCast:
+                            all_bf.append(vtk_to_numpy(tp.upperCast.GetPolyData().GetPoints().GetData()))
+                        if tp.lowerCast:
+                            pts_lc = vtk_to_numpy(tp.lowerCast.GetPolyData().GetPoints().GetData())
+                            all_bf.append((m_np @ np.hstack(
+                                [pts_lc, np.ones((len(pts_lc), 1))]).T).T[:, :3])
                 if all_bf:
                     all_bf_arr   = np.vstack(all_bf)
                     rough_foc    = (all_bf_arr.min(axis=0) + all_bf_arr.max(axis=0)) / 2
@@ -914,30 +959,31 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                         all_bf_arr, rough_cam_bf, rough_foc, (0, 1, 0), viewAngle, aspect)
                     globalButterflyCam = (f, c, (0, 1, 0))
 
-            if takeLateralViews:
+            if buccalCapture:
                 s45 = math.sin(math.radians(45)); c45 = math.cos(math.radians(45))
-                all_lat = np.vstack([
-                    vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
-                    for tp in timepoints
-                    for m in (tp.upperModel, tp.lowerModel,
-                              tp.upperCast,  tp.lowerCast) if m
-                ])
-                ctr = (all_lat.min(axis=0) + all_lat.max(axis=0)) / 2
-                cx, cy, cz = ctr
-                foc_rough = tuple(ctr)
-                views_rough = [
-                    ("anterior",      (cx,          cy + D,      cz)),
-                    ("posterior",     (cx,          cy - D,      cz)),
-                    ("left",          (cx - D,      cy,          cz)),
-                    ("right",         (cx + D,      cy,          cz)),
-                    ("oblique_left",  (cx - D*s45,  cy + D*c45,  cz)),
-                    ("oblique_right", (cx + D*s45,  cy + D*c45,  cz)),
-                ]
-                globalLateralCams = {}
-                for suffix, cam_r in views_rough:
-                    f, c = self._fitCameraToMeshPoints(
-                        all_lat, cam_r, foc_rough, (0, 0, 1), viewAngle, aspect)
-                    globalLateralCams[suffix] = (f, c, (0, 0, 1))
+                all_lat_pts = []
+                for tp in timepoints:
+                    for m in ([tp.upperModel, tp.lowerModel]
+                              + ([tp.upperCast, tp.lowerCast] if buccalShowCast else [])):
+                        if m: all_lat_pts.append(vtk_to_numpy(m.GetPolyData().GetPoints().GetData()))
+                if all_lat_pts:
+                    all_lat = np.vstack(all_lat_pts)
+                    ctr = (all_lat.min(axis=0) + all_lat.max(axis=0)) / 2
+                    cx, cy, cz = ctr
+                    foc_rough = tuple(ctr)
+                    views_rough = [
+                        ("anterior",      (cx,          cy + D,      cz)),
+                        ("posterior",     (cx,          cy - D,      cz)),
+                        ("left",          (cx - D,      cy,          cz)),
+                        ("right",         (cx + D,      cy,          cz)),
+                        ("oblique_left",  (cx - D*s45,  cy + D*c45,  cz)),
+                        ("oblique_right", (cx + D*s45,  cy + D*c45,  cz)),
+                    ]
+                    globalLateralCams = {}
+                    for suffix, cam_r in views_rough:
+                        f, c = self._fitCameraToMeshPoints(
+                            all_lat, cam_r, foc_rough, (0, 0, 1), viewAngle, aspect)
+                        globalLateralCams[suffix] = (f, c, (0, 0, 1))
 
         print(f"\n=== Screenshots → {outputDir} ===")
         for tp in timepoints:
@@ -948,15 +994,16 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 f"{tp.lowerModel.GetName()}_distance"
             )
 
-            if takeOcclusalViews:
+            if occlusalCapture:
                 # Upper jaw: camera from inferior (looking +Z upward)
                 focal, camPos, viewUp = self._setupViewForModel(
                     tp.upperModel, upperMap, threeDView, lookFromInferior=True,
-                    size=screenshotSize, castModel=tp.upperCast
+                    size=screenshotSize,
+                    castModel=tp.upperCast if occlusalShowCast else None
                 )
                 if globalUpperCam:
                     focal, camPos, viewUp = globalUpperCam
-                self._setColorLegendVisibility(upperMap, showColorLegend)
+                self._setColorLegendVisibility(upperMap, occlusalShowLegend)
                 path = os.path.join(outputDir, f"{tp.label}_upper.png")
                 self._captureTransparent(threeDView, path, size=screenshotSize,
                                          focal=focal, camPos=camPos, viewUp=viewUp)
@@ -965,31 +1012,32 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 # Lower jaw: camera from superior (looking −Z downward)
                 focal, camPos, viewUp = self._setupViewForModel(
                     tp.lowerModel, lowerMap, threeDView, lookFromInferior=False,
-                    size=screenshotSize, castModel=tp.lowerCast
+                    size=screenshotSize,
+                    castModel=tp.lowerCast if occlusalShowCast else None
                 )
                 if globalLowerCam:
                     focal, camPos, viewUp = globalLowerCam
-                self._setColorLegendVisibility(lowerMap, showColorLegend)
+                self._setColorLegendVisibility(lowerMap, occlusalShowLegend)
                 path = os.path.join(outputDir, f"{tp.label}_lower.png")
                 self._captureTransparent(threeDView, path, size=screenshotSize,
                                          focal=focal, camPos=camPos, viewUp=viewUp)
                 print(f"  {tp.label}_lower.png")
 
-            if takeButterflyView and upperMap and lowerMap:
-                self._setColorLegendVisibility(upperMap, showColorLegend)
-                self._setColorLegendVisibility(lowerMap, showColorLegend)
+            if butterflyCapture and upperMap and lowerMap:
                 path = os.path.join(outputDir, f"{tp.label}_butterfly.png")
                 self._takeButterflyScreenshot(
                     tp, upperMap, lowerMap, threeDView, path,
                     size=screenshotSize, precomputedCamera=globalButterflyCam,
-                    hinge=sharedButterflyHinge
+                    hinge=sharedButterflyHinge,
+                    showCast=butterflyShowCast, showLegend=butterflyShowLegend
                 )
                 print(f"  {tp.label}_butterfly.png")
 
-            if takeLateralViews:
+            if buccalCapture:
                 self._takeLateralViews(
                     tp, upperMap, lowerMap, threeDView, outputDir,
-                    size=screenshotSize, showColorLegend=showColorLegend,
+                    size=screenshotSize, showCast=buccalShowCast,
+                    showColorLegend=buccalShowLegend,
                     precomputedCameras=globalLateralCams
                 )
 
@@ -1009,7 +1057,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             clNode.SetVisibility(visible)
 
     def _takeLateralViews(self, tp, upperMap, lowerMap, threeDView, outputDir,
-                          size=(500, 500), showColorLegend=True, precomputedCameras=None):
+                          size=(500, 500), showCast=True, showColorLegend=False,
+                          precomputedCameras=None):
         """Five lateral views of both jaws in occlusion.
 
         Camera directions in RAS (R=right, A=anterior, S=superior):
@@ -1022,23 +1071,21 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         """
         import os, math
 
-        # Show arches + cast bases + distance maps; hide everything else
+        # Show arches + distance maps (+ cast bases if requested); hide everything else
         for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
             n  = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
             dn = n.GetDisplayNode()
             if dn:
                 dn.SetVisibility(False)
-        for node in (tp.upperModel, tp.lowerModel,
-                     tp.upperCast, tp.lowerCast,
-                     upperMap, lowerMap):
+        cast_nodes = (tp.upperCast, tp.lowerCast) if showCast else ()
+        for node in (tp.upperModel, tp.lowerModel) + cast_nodes + (upperMap, lowerMap):
             if node and node.GetDisplayNode():
                 node.GetDisplayNode().SetVisibility(True)
         self._setColorLegendVisibility(upperMap, showColorLegend)
         self._setColorLegendVisibility(lowerMap, showColorLegend)
 
-        # Combined bounds of arch + cast base
-        disp = [m for m in (tp.upperModel, tp.lowerModel,
-                             tp.upperCast,  tp.lowerCast) if m]
+        # Combined bounds of arch + cast base (only cast if visible)
+        disp = [m for m in (tp.upperModel, tp.lowerModel) + cast_nodes if m]
         disp_pts = np.vstack([vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
                                for m in disp])
         mn, mx = disp_pts.min(axis=0), disp_pts.max(axis=0)
@@ -1069,8 +1116,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         viewAngle = renderer.GetActiveCamera().GetViewAngle()
         if precomputedCameras is None:
             pts_list = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
-                        for m in (tp.upperModel, tp.lowerModel,
-                                  tp.upperCast,  tp.lowerCast) if m]
+                        for m in (tp.upperModel, tp.lowerModel) + cast_nodes if m]
             all_pts = np.vstack(pts_list)
 
         for suffix, camPos_rough in views:
@@ -1193,7 +1239,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         return focal, camPos, viewUp
 
     def _takeButterflyScreenshot(self, tp, upperMap, lowerMap, threeDView, path,
-                                  size=(500, 500), precomputedCamera=None, hinge=None):
+                                  size=(500, 500), precomputedCamera=None, hinge=None,
+                                  showCast=False, showLegend=True):
         """Rotate lower jaw 180° around the LR axis posterior to the upper jaw,
         take a combined screenshot, then undo."""
         if hinge is not None:
@@ -1216,18 +1263,26 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             "vtkMRMLLinearTransformNode", "_butterfly_tmp"
         )
         tfmNode.SetMatrixTransformToParent(mat)
-        for node in (tp.lowerModel, lowerMap):
+        lower_xfm_nodes = [tp.lowerModel, lowerMap]
+        if showCast and tp.lowerCast:
+            lower_xfm_nodes.append(tp.lowerCast)
+        for node in lower_xfm_nodes:
             if node:
                 node.SetAndObserveTransformNodeID(tfmNode.GetID())
 
-        # Hide everything, then show only the four nodes for this timepoint
+        # Hide everything, then show arch + map nodes (+ casts if requested)
         for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
             n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
             if n.GetDisplayNode():
                 n.GetDisplayNode().SetVisibility(False)
-        for node in (tp.upperModel, upperMap, tp.lowerModel, lowerMap):
+        show_nodes = [tp.upperModel, upperMap, tp.lowerModel, lowerMap]
+        if showCast:
+            show_nodes += [tp.upperCast, tp.lowerCast]
+        for node in show_nodes:
             if node and node.GetDisplayNode():
                 node.GetDisplayNode().SetVisibility(True)
+        self._setColorLegendVisibility(upperMap, showLegend)
+        self._setColorLegendVisibility(lowerMap, showLegend)
 
         # Build world-space point cloud: upper jaw as-is, lower jaw with butterfly transform
         pts_upper = vtk_to_numpy(tp.upperModel.GetPolyData().GetPoints().GetData())
@@ -1236,7 +1291,15 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         pts_lower_xfm = (mat_np @ np.hstack(
             [pts_lower, np.ones((len(pts_lower), 1))]
         ).T).T[:, :3]
-        all_pts = np.vstack([pts_upper, pts_lower_xfm])
+        pts_list = [pts_upper, pts_lower_xfm]
+        if showCast:
+            if tp.upperCast:
+                pts_list.insert(1, vtk_to_numpy(tp.upperCast.GetPolyData().GetPoints().GetData()))
+            if tp.lowerCast:
+                pts_lc = vtk_to_numpy(tp.lowerCast.GetPolyData().GetPoints().GetData())
+                pts_list.append((mat_np @ np.hstack(
+                    [pts_lc, np.ones((len(pts_lc), 1))]).T).T[:, :3])
+        all_pts = np.vstack(pts_list)
 
         # Rough focal: centre of the combined axis-aligned bounding box
         rough_focal = all_pts.mean(axis=0)
@@ -1256,8 +1319,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         self._captureTransparent(threeDView, path, size=size,
                                   focal=focal, camPos=camPos, viewUp=viewUp)
 
-        # Undo: remove transform from lower models
-        for node in (tp.lowerModel, lowerMap):
+        # Undo: remove transform from all transformed lower nodes
+        for node in lower_xfm_nodes:
             if node:
                 node.SetAndObserveTransformNodeID(None)
         slicer.mrmlScene.RemoveNode(tfmNode)
