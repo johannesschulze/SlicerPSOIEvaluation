@@ -785,28 +785,158 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
     # ── Orientation & Registration ───────────────────────────────────────────
 
     _T0_TRANSFORM_NAME = "T0_orientation"
+    _AXIS_GRID_NAMES   = ["T0_axis_XY", "T0_axis_XZ", "T0_axis_YZ"]
+    _orientSavedVis    = None   # populated in orientT0Interactive, cleared in confirm
+
+    def _createAlignmentGrid(self):
+        """Three 100×100 mm axis-plane model nodes at origin as an orientation guide.
+
+        Uses vtkMRMLModelNode (wireframe polygon) rather than markup plane nodes
+        so the API is Slicer-version independent.
+        """
+        for name in self._AXIS_GRID_NAMES:
+            old = slicer.mrmlScene.GetFirstNodeByName(name)
+            if old:
+                slicer.mrmlScene.RemoveNode(old)
+
+        plane_defs = [
+            ("T0_axis_XY", np.array([1,0,0], float), np.array([0,1,0], float)),
+            ("T0_axis_XZ", np.array([1,0,0], float), np.array([0,0,1], float)),
+            ("T0_axis_YZ", np.array([0,1,0], float), np.array([0,0,1], float)),
+        ]
+        n_seg    = 4        # grid subdivisions per side → 4×4 squares
+        half     = 50.0     # half-size in mm  →  100×100 mm total
+        coords   = np.linspace(-half, half, n_seg + 1)
+        grid_nodes = []
+        for name, ax0, ax1 in plane_defs:
+            pts   = vtk.vtkPoints()
+            cells = vtk.vtkCellArray()
+            # (n_seg+1)² vertices
+            vid = {}
+            for i, s in enumerate(coords):
+                for j, t in enumerate(coords):
+                    vid[(i, j)] = pts.InsertNextPoint(*(s * ax0 + t * ax1))
+            # n_seg² quads
+            for i in range(n_seg):
+                for j in range(n_seg):
+                    quad = vtk.vtkQuad()
+                    for k, (di, dj) in enumerate([(0,0),(1,0),(1,1),(0,1)]):
+                        quad.GetPointIds().SetId(k, vid[(i+di, j+dj)])
+                    cells.InsertNextCell(quad)
+            pd = vtk.vtkPolyData()
+            pd.SetPoints(pts)
+            pd.SetPolys(cells)
+
+            node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", name)
+            node.SetAndObservePolyData(pd)
+            node.CreateDefaultDisplayNodes()
+            dn = node.GetDisplayNode()
+            dn.SetRepresentation(1)       # 1 = wireframe → clean rectangle outline
+            dn.SetColor(0.8, 0.15, 0.15)
+            dn.SetLineWidth(2)
+            dn.SetOpacity(0.8)
+            dn.SetLighting(False)          # consistent colour regardless of scene lights
+            dn.SetVisibility(True)
+            grid_nodes.append(node)
+        return grid_nodes
 
     def orientT0Interactive(self, timepoints):
-        """Attach an interactive linear transform to T0 upper+lower jaw."""
+        """OBB-align T0 models to world axes, show axis grid, hide everything else."""
         tp0 = timepoints[0]
+
+        # ── OBB via PCA ──────────────────────────────────────────────────────
+        pts_list = [vtk_to_numpy(m.GetPolyData().GetPoints().GetData())
+                    for m in (tp0.upperModel, tp0.lowerModel) if m]
+        if pts_list:
+            all_pts  = np.vstack(pts_list)
+            centroid = all_pts.mean(axis=0)
+            _, _, Vt = np.linalg.svd(all_pts - centroid, full_matrices=False)
+            # Vt rows: most→least variance = transverse(LR), AP, occlusal(SI)
+            e_lr, e_ap, e_si = Vt[0], Vt[1], Vt[2]
+            if np.dot(np.cross(e_lr, e_ap), e_si) < 0:
+                e_si = -e_si                          # ensure right-handed
+            # OBB alignment → LR=X, AP=Y, SI=Z; then flip 180° around AP (Y)
+            R_obb   = np.vstack([e_lr, e_ap, e_si])
+            R_ap180 = np.diag([-1.0, 1.0, -1.0])     # 180° around Y
+            R = R_ap180 @ R_obb
+            # Centre the AABB of the rotated cloud at world origin.
+            # R @ mean ≠ bbox_centre(R @ pts), so compute explicitly.
+            P_rot = (R @ all_pts.T).T
+            t = -(P_rot.min(axis=0) + P_rot.max(axis=0)) / 2
+        else:
+            R, t = np.eye(3), np.zeros(3)
+
+        # ── Create / update transform node ───────────────────────────────────
         tfmNode = slicer.mrmlScene.GetFirstNodeByName(self._T0_TRANSFORM_NAME)
         if tfmNode is None:
             tfmNode = slicer.mrmlScene.AddNewNodeByClass(
                 "vtkMRMLLinearTransformNode", self._T0_TRANSFORM_NAME
             )
+        mat = vtk.vtkMatrix4x4()
+        for i in range(3):
+            for j in range(3):
+                mat.SetElement(i, j, R[i, j])
+            mat.SetElement(i, 3, t[i])
+        tfmNode.SetMatrixTransformToParent(mat)
+
         for model in (tp0.upperModel, tp0.lowerModel):
             if model:
                 model.SetAndObserveTransformNodeID(tfmNode.GetID())
+
+        # ── Re-centre using actual GetRASBounds ──────────────────────────────
+        # GetRASBounds maps the LOCAL AABB corners through the rotation, which
+        # gives a different AABB centre than the rotated point cloud.  Read the
+        # real world bounds and subtract the residual so the centre is at (0,0,0).
+        b6  = [0.0] * 6
+        wmin, wmax = np.full(3, 1e9), np.full(3, -1e9)
+        for model in (tp0.upperModel, tp0.lowerModel):
+            if model:
+                model.GetRASBounds(b6)
+                wmin = np.minimum(wmin, [b6[0], b6[2], b6[4]])
+                wmax = np.maximum(wmax, [b6[1], b6[3], b6[5]])
+        offset = (wmin + wmax) / 2          # residual: how far the centre is from (0,0,0)
+        for i in range(3):
+            mat.SetElement(i, 3, mat.GetElement(i, 3) - offset[i])
+        tfmNode.SetMatrixTransformToParent(mat)
+
+        # Place gizmo at world (0,0,0): solve R @ c + t = 0  →  c = -Rᵀ @ t
+        t_final = np.array([mat.GetElement(i, 3) for i in range(3)])
+        c_local = -R.T @ t_final
+        tfmNode.SetCenterOfTransformation(*c_local)
+
         tfmNode.CreateDefaultDisplayNodes()
         dn = tfmNode.GetDisplayNode()
         dn.SetEditorVisibility(True)
         dn.SetEditorVisibility3D(True)
         dn.SetRotationHandleComponentVisibility3D(True, True, True, True)
-        print(f"Interactive transform '{self._T0_TRANSFORM_NAME}' applied to T0. "
-              "Use the 3D-view handles, then click 'Confirm T0 orientation'.")
+
+        # ── Save scene visibility (once) and show only T0 models + grid ──────
+        def _display_nodes():
+            """Yield (node, displayNode) for every displayable node in scene."""
+            for _i in range(slicer.mrmlScene.GetNumberOfNodes()):
+                _n = slicer.mrmlScene.GetNthNode(_i)
+                if not hasattr(_n, 'GetDisplayNode'):
+                    continue
+                _dn = _n.GetDisplayNode()
+                if _dn is not None:
+                    yield _n, _dn
+
+        if self._orientSavedVis is None:
+            self._orientSavedVis = {n.GetID(): dn.GetVisibility()
+                                    for n, dn in _display_nodes()}
+
+        grid_nodes = self._createAlignmentGrid()
+
+        keep_ids = {m.GetID() for m in (tp0.upperModel, tp0.lowerModel) if m}
+        keep_ids |= {gn.GetID() for gn in grid_nodes}
+
+        for n, dn in _display_nodes():
+            dn.SetVisibility(1 if n.GetID() in keep_ids else 0)
+
+        print(f"OBB-aligned T0 models. Use 3-D handles, then 'Confirm T0 orientation'.")
 
     def confirmT0Orientation(self, timepoints):
-        """Harden the T0 orientation transform into mesh coordinates."""
+        """Harden the T0 orientation transform and restore scene visibility."""
         tp0 = timepoints[0]
         tfmNode = slicer.mrmlScene.GetFirstNodeByName(self._T0_TRANSFORM_NAME)
         for model in (tp0.upperModel, tp0.lowerModel):
@@ -815,6 +945,25 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         if tfmNode:
             tfmNode.GetDisplayNode().SetEditorVisibility(False)
             slicer.mrmlScene.RemoveNode(tfmNode)
+
+        # Remove axis grid
+        for name in self._AXIS_GRID_NAMES:
+            n = slicer.mrmlScene.GetFirstNodeByName(name)
+            if n:
+                slicer.mrmlScene.RemoveNode(n)
+
+        # Restore saved visibility
+        if self._orientSavedVis:
+            saved = self._orientSavedVis
+            for i in range(slicer.mrmlScene.GetNumberOfNodes()):
+                n = slicer.mrmlScene.GetNthNode(i)
+                if not hasattr(n, 'GetDisplayNode'):
+                    continue
+                dn2 = n.GetDisplayNode()
+                if dn2 and n.GetID() in saved:
+                    dn2.SetVisibility(saved[n.GetID()])
+            self._orientSavedVis = None
+
         print("T0 orientation confirmed and hardened.")
 
     def registerTimepointsToT0(self, timepoints):
