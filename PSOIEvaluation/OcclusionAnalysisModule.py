@@ -629,16 +629,39 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         labelEdit.connect(     "textChanged(QString)",             lambda v, r=row: self._onLabelChanged(v, r))
         upperSelector.connect( "currentNodeChanged(vtkMRMLNode*)", lambda n, r=row: self._onUpperChanged(n, r))
         lowerSelector.connect( "currentNodeChanged(vtkMRMLNode*)", lambda n, r=row: self._onLowerChanged(n, r))
-        upperTrimBtn.connect(  "clicked(bool)",                    lambda _, r=row: self._onTrimClicked(r["tp"].upperModel))
-        lowerTrimBtn.connect(  "clicked(bool)",                    lambda _, r=row: self._onTrimClicked(r["tp"].lowerModel))
+        upperTrimBtn.connect(  "clicked(bool)",                    lambda _, r=row: self._onTrimClicked(r["tp"].upperModel, 'upper'))
+        lowerTrimBtn.connect(  "clicked(bool)",                    lambda _, r=row: self._onTrimClicked(r["tp"].lowerModel, 'lower'))
         removeBtn.connect(     "clicked(bool)",                    lambda _, r=row: self._onRemoveClicked(r))
 
-    def _onTrimClicked(self, model_node):
+    def _onTrimClicked(self, model_node, jaw):
         if model_node is None:
             slicer.util.warningDisplay("No model selected for this jaw.")
             return
 
+        # Switch to the axis that shows the XY trim plane:
+        # upper → look from inferior (camera below, looking up)
+        # lower → look from superior (camera above, looking down)
+        threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()
+        axis = ctk.ctkAxesWidget.Inferior if jaw == 'upper' else ctk.ctkAxesWidget.Superior
+        threeDView.lookFromAxis(axis)
+
         curve_holder = [None]
+
+        # Make all visible model nodes semi-transparent; remember their opacity.
+        saved_opacities = {}
+        for _i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+            _m = slicer.mrmlScene.GetNthNodeByClass(_i, "vtkMRMLModelNode")
+            _dn = _m.GetDisplayNode()
+            if _dn and _dn.GetVisibility():
+                saved_opacities[_m.GetID()] = _dn.GetOpacity()
+                _dn.SetOpacity(0.35)
+
+        def _restoreOpacities():
+            for _i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
+                _m = slicer.mrmlScene.GetNthNodeByClass(_i, "vtkMRMLModelNode")
+                _dn = _m.GetDisplayNode()
+                if _dn and _m.GetID() in saved_opacities:
+                    _dn.SetOpacity(saved_opacities[_m.GetID()])
 
         dlg = qt.QDialog(slicer.util.mainWindow())
         dlg.setWindowTitle(f"Trim  —  {model_node.GetName()}")
@@ -646,15 +669,26 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         layout = qt.QVBoxLayout(dlg)
 
         info = qt.QLabel(
-            "1.  Click <b>Draw outline</b>, then place points on the model.\n"
-            "    Close the loop with a right-click (or double-click).\n\n"
-            "2.  Click <b>Apply trim</b> to clip this model, or\n"
-            "    <b>Apply to all models</b> to clip every model in every timepoint."
+            "Select an existing curve <b>or</b> draw a new one.\n"
+            "Everything outside the outline is removed."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        drawBtn     = qt.QPushButton("Draw outline")
+        # ── Existing curve selector ───────────────────────────────────────
+        existingLabel = qt.QLabel("Use existing curve:")
+        existingSelector = slicer.qMRMLNodeComboBox()
+        existingSelector.nodeTypes    = ["vtkMRMLMarkupsClosedCurveNode"]
+        existingSelector.noneEnabled  = True
+        existingSelector.addEnabled   = False
+        existingSelector.removeEnabled = False
+        existingSelector.setMRMLScene(slicer.mrmlScene)
+        existingRow = qt.QHBoxLayout()
+        existingRow.addWidget(existingLabel)
+        existingRow.addWidget(existingSelector)
+        layout.addLayout(existingRow)
+
+        drawBtn     = qt.QPushButton("Draw new outline")
         applyBtn    = qt.QPushButton("Apply trim")
         applyAllBtn = qt.QPushButton("Apply to all models")
         applyBtn.setEnabled(False)
@@ -665,9 +699,23 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         layout.addWidget(applyAllBtn)
         layout.addWidget(btnBox)
 
+        def _setCurveVisible(node, visible):
+            if node is not None:
+                dn = node.GetDisplayNode()
+                if dn:
+                    dn.SetVisibility(visible)
+
+        def _onExistingSelected(node):
+            _setCurveVisible(curve_holder[0], False)   # hide previous
+            curve_holder[0] = node
+            _setCurveVisible(node, True)               # show newly selected
+            applyBtn.setEnabled(node is not None)
+            applyAllBtn.setEnabled(node is not None)
+
+        existingSelector.connect("currentNodeChanged(vtkMRMLNode*)", _onExistingSelected)
+
         def _startDraw():
-            if curve_holder[0] is not None:
-                slicer.mrmlScene.RemoveNode(curve_holder[0])
+            existingSelector.setCurrentNode(None)      # hides previous via _onExistingSelected
             curve = slicer.mrmlScene.AddNewNodeByClass(
                 "vtkMRMLMarkupsClosedCurveNode",
                 f"_trim_{model_node.GetName()}"
@@ -678,14 +726,14 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             selNode.SetActivePlaceNodeID(curve.GetID())
             intNode = slicer.app.applicationLogic().GetInteractionNode()
             intNode.SetCurrentInteractionMode(intNode.Place)
-            curve_holder[0] = curve
-            applyBtn.setEnabled(True)
-            applyAllBtn.setEnabled(True)
+            existingSelector.setCurrentNode(curve)     # shows new curve via _onExistingSelected
 
         def _applyTrim():
             if curve_holder[0] is None:
                 return
             self.logic.trimModelWithCurve(model_node, curve_holder[0])
+            _setCurveVisible(curve_holder[0], False)
+            _restoreOpacities()
             dlg.accept()
 
         def _applyToAll():
@@ -700,13 +748,15 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
                     all_models.append(tp.lowerModel)
             for m in all_models:
                 self.logic.trimModelWithCurve(m, curve_holder[0])
+            _setCurveVisible(curve_holder[0], False)
+            _restoreOpacities()
             dlg.accept()
 
         def _cancel():
-            if curve_holder[0] is not None:
-                slicer.mrmlScene.RemoveNode(curve_holder[0])
-                intNode = slicer.app.applicationLogic().GetInteractionNode()
-                intNode.SetCurrentInteractionMode(intNode.ViewTransform)
+            _setCurveVisible(curve_holder[0], False)
+            _restoreOpacities()
+            intNode = slicer.app.applicationLogic().GetInteractionNode()
+            intNode.SetCurrentInteractionMode(intNode.ViewTransform)
             dlg.reject()
 
         drawBtn.connect(    "clicked(bool)", lambda _: _startDraw())
