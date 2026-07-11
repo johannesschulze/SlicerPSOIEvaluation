@@ -1201,6 +1201,14 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             origShVisibility[_item] = shNode.GetItemDisplayVisibility(_item)
             shNode.SetItemDisplayVisibility(_item, True)
 
+        # Hide all closed-curve markup nodes AFTER the SH override so the
+        # SH "make everything visible" pass cannot undo the hiding.
+        origMarkupVisibility = {}
+        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLMarkupsClosedCurveNode")):
+            n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLMarkupsClosedCurveNode")
+            origMarkupVisibility[n.GetID()] = n.GetDisplayVisibility()
+            n.SetDisplayVisibility(False)
+
         # ── Pre-compute shared butterfly hinge ────────────────────────────
         # Posterior border of the upper model with the largest AP extent,
         # so all timepoints fold around the same axis for direct comparison.
@@ -1356,7 +1364,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                     precomputedCameras=globalLateralCams
                 )
 
-        self._restoreAllVisibility(origVisibility)
+        self._restoreAllVisibility(origVisibility, origMarkupVisibility)
         for _item, _vis in origShVisibility.items():
             shNode.SetItemDisplayVisibility(_item, min(1, _vis))
         print("Done.")
@@ -1735,12 +1743,18 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             renderer.SetBackgroundAlpha(1.0)
         threeDView.forceRender()
 
-    def _restoreAllVisibility(self, origVisibility):
+    def _restoreAllVisibility(self, origVisibility, origMarkupVisibility=None):
         for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLModelNode")):
             n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLModelNode")
             dn = n.GetDisplayNode()
             if dn and n.GetID() in origVisibility:
                 dn.SetVisibility(origVisibility[n.GetID()])
+        if origMarkupVisibility:
+            for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLMarkupsClosedCurveNode")):
+                n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLMarkupsClosedCurveNode")
+                dn = n.GetDisplayNode()
+                if dn and n.GetID() in origMarkupVisibility:
+                    dn.SetVisibility(origMarkupVisibility[n.GetID()])
 
     # ── Occlusion maps ───────────────────────────────────────────────────────
 
