@@ -1992,12 +1992,21 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                     loops.append(np.array([pts.GetPoint(i) for i in loop]))
             return loops
 
+        def _resample_loop(pts_3d, spacing=1.5):
+            """Resample a closed polygon to ~spacing mm between vertices."""
+            closed = np.vstack([pts_3d, pts_3d[:1]])
+            seg    = np.linalg.norm(np.diff(closed, axis=0), axis=1)
+            cum    = np.concatenate([[0.0], np.cumsum(seg)])
+            n      = max(8, int(round(cum[-1] / spacing)))
+            t      = np.linspace(0.0, cum[-1], n, endpoint=False)
+            return np.column_stack([np.interp(t, cum, closed[:, k]) for k in range(3)])
+
         loops = _order_loops(bpd)
 
         # ── Stage 1: walls from gingival boundary to z_wall ──────────────
         wall_pd = vtk.vtkPolyData()
         if loops:
-            ring  = max(loops, key=len)
+            ring  = _resample_loop(max(loops, key=len))
             n_v   = len(ring)
             top_ring = ring.copy()
             top_ring[:, 2] = z_wall
