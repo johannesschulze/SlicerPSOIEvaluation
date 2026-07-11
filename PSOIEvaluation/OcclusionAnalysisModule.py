@@ -578,8 +578,16 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         upperSelector = self._makeModelSelector("Upper arch mesh (MIP)")
         upperSelector.setCurrentNode(tp.upperModel)
 
+        upperTrimBtn = qt.QPushButton("✂")
+        upperTrimBtn.setFixedWidth(26)
+        upperTrimBtn.setToolTip("Trim upper model to arch-shaped cast boundary")
+
         lowerSelector = self._makeModelSelector("Lower arch mesh (MIP)")
         lowerSelector.setCurrentNode(tp.lowerModel)
+
+        lowerTrimBtn = qt.QPushButton("✂")
+        lowerTrimBtn.setFixedWidth(26)
+        lowerTrimBtn.setToolTip("Trim lower model to arch-shaped cast boundary")
 
         removeBtn = qt.QPushButton("✕")
         removeBtn.setFixedWidth(26)
@@ -589,8 +597,10 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         rowLayout.addWidget(labelEdit)
         rowLayout.addWidget(qt.QLabel("Upper:"))
         rowLayout.addWidget(upperSelector)
+        rowLayout.addWidget(upperTrimBtn)
         rowLayout.addWidget(qt.QLabel("Lower:"))
         rowLayout.addWidget(lowerSelector)
+        rowLayout.addWidget(lowerTrimBtn)
         rowLayout.addWidget(removeBtn)
 
         self._timepointsLayout.addWidget(rowWidget)
@@ -599,16 +609,102 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             "widget":        rowWidget,
             "labelEdit":     labelEdit,
             "upperSelector": upperSelector,
+            "upperTrimBtn":  upperTrimBtn,
             "lowerSelector": lowerSelector,
+            "lowerTrimBtn":  lowerTrimBtn,
             "removeBtn":     removeBtn,
             "tp":            tp,
         }
         self._timepointRows.append(row)
 
-        labelEdit.connect(     "textChanged(QString)",         lambda v, r=row: self._onLabelChanged(v, r))
+        labelEdit.connect(     "textChanged(QString)",             lambda v, r=row: self._onLabelChanged(v, r))
         upperSelector.connect( "currentNodeChanged(vtkMRMLNode*)", lambda n, r=row: self._onUpperChanged(n, r))
         lowerSelector.connect( "currentNodeChanged(vtkMRMLNode*)", lambda n, r=row: self._onLowerChanged(n, r))
-        removeBtn.connect(     "clicked(bool)",                lambda _, r=row: self._onRemoveClicked(r))
+        upperTrimBtn.connect(  "clicked(bool)",                    lambda _, r=row: self._onTrimClicked(r["tp"].upperModel))
+        lowerTrimBtn.connect(  "clicked(bool)",                    lambda _, r=row: self._onTrimClicked(r["tp"].lowerModel))
+        removeBtn.connect(     "clicked(bool)",                    lambda _, r=row: self._onRemoveClicked(r))
+
+    def _onTrimClicked(self, model_node):
+        if model_node is None:
+            slicer.util.warningDisplay("No model selected for this jaw.")
+            return
+
+        curve_holder = [None]
+
+        dlg = qt.QDialog(slicer.util.mainWindow())
+        dlg.setWindowTitle(f"Trim  —  {model_node.GetName()}")
+        dlg.setMinimumWidth(340)
+        layout = qt.QVBoxLayout(dlg)
+
+        info = qt.QLabel(
+            "1.  Click <b>Draw outline</b>, then place points on the model.\n"
+            "    Close the loop with a right-click (or double-click).\n\n"
+            "2.  Click <b>Apply trim</b> to clip this model, or\n"
+            "    <b>Apply to all models</b> to clip every model in every timepoint."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        drawBtn     = qt.QPushButton("Draw outline")
+        applyBtn    = qt.QPushButton("Apply trim")
+        applyAllBtn = qt.QPushButton("Apply to all models")
+        applyBtn.setEnabled(False)
+        applyAllBtn.setEnabled(False)
+        btnBox = qt.QDialogButtonBox(qt.QDialogButtonBox.Cancel)
+        layout.addWidget(drawBtn)
+        layout.addWidget(applyBtn)
+        layout.addWidget(applyAllBtn)
+        layout.addWidget(btnBox)
+
+        def _startDraw():
+            if curve_holder[0] is not None:
+                slicer.mrmlScene.RemoveNode(curve_holder[0])
+            curve = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLMarkupsClosedCurveNode",
+                f"_trim_{model_node.GetName()}"
+            )
+            curve.GetDisplayNode().SetGlyphScale(1.5)
+            selNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+            selNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsClosedCurveNode")
+            selNode.SetActivePlaceNodeID(curve.GetID())
+            intNode = slicer.app.applicationLogic().GetInteractionNode()
+            intNode.SetCurrentInteractionMode(intNode.Place)
+            curve_holder[0] = curve
+            applyBtn.setEnabled(True)
+            applyAllBtn.setEnabled(True)
+
+        def _applyTrim():
+            if curve_holder[0] is None:
+                return
+            self.logic.trimModelWithCurve(model_node, curve_holder[0])
+            dlg.accept()
+
+        def _applyToAll():
+            if curve_holder[0] is None:
+                return
+            all_models = []
+            for r in self._timepointRows:
+                tp = r["tp"]
+                if tp.upperModel:
+                    all_models.append(tp.upperModel)
+                if tp.lowerModel:
+                    all_models.append(tp.lowerModel)
+            for m in all_models:
+                self.logic.trimModelWithCurve(m, curve_holder[0])
+            dlg.accept()
+
+        def _cancel():
+            if curve_holder[0] is not None:
+                slicer.mrmlScene.RemoveNode(curve_holder[0])
+                intNode = slicer.app.applicationLogic().GetInteractionNode()
+                intNode.SetCurrentInteractionMode(intNode.ViewTransform)
+            dlg.reject()
+
+        drawBtn.connect(    "clicked(bool)", lambda _: _startDraw())
+        applyBtn.connect(   "clicked(bool)", lambda _: _applyTrim())
+        applyAllBtn.connect("clicked(bool)", lambda _: _applyToAll())
+        btnBox.rejected.connect(_cancel)
+        dlg.show()
 
     def _makeModelSelector(self, tooltip):
         sel = slicer.qMRMLNodeComboBox()
@@ -1982,6 +2078,53 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             cols["verdict"].SetValue(i, row["verdict"])
         node.Modified()
 
+    # ── Trimming ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def trimModelWithCurve(model_node, curve_node):
+        """Clip model in-place to the XY-projected outline of a closed markup curve.
+
+        vtkImplicitSelectionLoop projects every model vertex onto the plane of
+        the loop, so the clip is a vertical extrusion of the drawn outline —
+        independent of the Z level at which the user drew the curve.
+        """
+        if model_node is None or curve_node is None:
+            return
+        poly = model_node.GetPolyData()
+        if poly is None or poly.GetNumberOfPoints() == 0:
+            return
+
+        world_pts = curve_node.GetCurvePointsWorld()
+        if world_pts is None or world_pts.GetNumberOfPoints() < 3:
+            slicer.util.warningDisplay("Curve has too few points — place more control points.")
+            return
+
+        # Project to Z=0 so the loop lies strictly in the XY plane.
+        # vtkImplicitSelectionLoop then clips as a vertical extrusion (normal = Z).
+        xy_pts = vtk.vtkPoints()
+        xy_pts.SetNumberOfPoints(world_pts.GetNumberOfPoints())
+        for i in range(world_pts.GetNumberOfPoints()):
+            p = world_pts.GetPoint(i)
+            xy_pts.SetPoint(i, p[0], p[1], 0.0)
+
+        sel_loop = vtk.vtkImplicitSelectionLoop()
+        sel_loop.SetLoop(xy_pts)
+
+        clipper = vtk.vtkClipPolyData()
+        clipper.SetInputData(poly)
+        clipper.SetClipFunction(sel_loop)
+        clipper.InsideOutOn()   # keep inside (negative) region
+        clipper.Update()
+
+        normals = vtk.vtkPolyDataNormals()
+        normals.SetInputData(clipper.GetOutput())
+        normals.ComputePointNormalsOn()
+        normals.ComputeCellNormalsOff()
+        normals.SplittingOff()
+        normals.Update()
+
+        model_node.SetAndObservePolyData(normals.GetOutput())
+
     # ── Display helpers ───────────────────────────────────────────────────
 
     @staticmethod
@@ -2056,8 +2199,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             if xy_bounds is not None
             else (bounds[0], bounds[1], bounds[2], bounds[3])
         )
-        xmid   = (xb0 + xb1) / 2.0
-        xhalf  = (xb1 - xb0) / 2.0 + margin
+        xmid   = 0.0
+        xhalf  = max(abs(xb0), abs(xb1)) + margin
         ymin_b = yb0 - margin
         ymax_b = yb1 + margin
 
