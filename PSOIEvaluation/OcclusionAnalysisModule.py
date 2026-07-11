@@ -404,7 +404,15 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             "Build a trimmed orthodontic art base for each arch and show it in "
             "the 3-D view. Runs automatically with 'Create occlusion maps'."
         )
-        screenshotLayout.addRow(self._createCastsButton)
+        self._smoothCastWallsButton = qt.QPushButton("Smooth cast walls")
+        self._smoothCastWallsButton.setToolTip(
+            "Rebuild cast models with the boundary loop resampled to uniform "
+            "arc-length spacing, removing stripe rendering artifacts on the walls."
+        )
+        castBtnRow = qt.QHBoxLayout()
+        castBtnRow.addWidget(self._createCastsButton)
+        castBtnRow.addWidget(self._smoothCastWallsButton)
+        screenshotLayout.addRow(castBtnRow)
 
         self._screenshotButton = qt.QPushButton("Take screenshots")
         self._screenshotButton.setToolTip(
@@ -440,6 +448,7 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             _cb.connect("toggled(bool)", self._onScreenshotSettingChanged)
         self._screenshotButton.connect("clicked(bool)", self._onScreenshotClicked)
         self._createCastsButton.connect("clicked(bool)", self._onCreateCastsClicked)
+        self._smoothCastWallsButton.connect("clicked(bool)", self._onSmoothCastWallsClicked)
         self._reportButton.connect("clicked(bool)", self._onReportClicked)
         self._mapButton.connect("clicked(bool)", self._onMapClicked)
         self._runButton.connect("clicked(bool)", self._onRunClicked)
@@ -810,6 +819,17 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             self.logic.createCastModels(timepoints)
         slicer.util.infoDisplay(
             f"Cast models created for {len(timepoints)} timepoint(s).",
+            autoCloseMsec=2000,
+        )
+
+    def _onSmoothCastWallsClicked(self):
+        timepoints = self._requireTimepoints(1)
+        if timepoints is None:
+            return
+        with slicer.util.tryWithErrorDisplay(_("Cast wall smoothing failed."), waitCursor=True):
+            self.logic.createCastModels(timepoints, resample_walls=True)
+        slicer.util.infoDisplay(
+            f"Cast walls smoothed for {len(timepoints)} timepoint(s).",
             autoCloseMsec=2000,
         )
 
@@ -2142,7 +2162,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         dn.SetSpecular(CAST_SPECULAR)
         dn.SetPower(CAST_SPEC_POW)
 
-    def createCastModels(self, timepoints):
+    def createCastModels(self, timepoints, resample_walls=False):
         """Build (or rebuild) trimmed art-base nodes for all timepoints."""
         for tp in timepoints:
             if not tp.upperModel and not tp.lowerModel:
@@ -2159,13 +2179,15 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 raw_bounds[2] = min(raw_bounds[2], b[2])
                 raw_bounds[3] = max(raw_bounds[3], b[3])
             if tp.upperModel:
-                tp.upperCast = self._createCastNode(tp.upperModel, jaw='upper', xy_bounds=raw_bounds)
+                tp.upperCast = self._createCastNode(tp.upperModel, jaw='upper',
+                                                    xy_bounds=raw_bounds, resample_walls=resample_walls)
             if tp.lowerModel:
-                tp.lowerCast = self._createCastNode(tp.lowerModel, jaw='lower', xy_bounds=raw_bounds)
+                tp.lowerCast = self._createCastNode(tp.lowerModel, jaw='lower',
+                                                    xy_bounds=raw_bounds, resample_walls=resample_walls)
 
     @staticmethod
     def _buildCastPolyData(poly_data, jaw='lower', prism_height=5.0, margin=2.5,
-                           xy_bounds=None):
+                           xy_bounds=None, resample_walls=False):
         """Build cast geometry: gingival walls + trimmed-cast base prism.
 
         Stage 1 – Walls: extrude the largest boundary loop straight to
@@ -2298,7 +2320,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         # ── Stage 1: walls from gingival boundary to z_wall ──────────────
         wall_pd = vtk.vtkPolyData()
         if loops:
-            ring  = _resample_loop(max(loops, key=len))
+            ring  = _resample_loop(max(loops, key=len)) if resample_walls else max(loops, key=len)
             n_v   = len(ring)
             top_ring = ring.copy()
             top_ring[:, 2] = z_wall
@@ -2403,14 +2425,15 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
 
         return final.GetOutput()
 
-    def _createCastNode(self, source_model, jaw='lower', xy_bounds=None):
+    def _createCastNode(self, source_model, jaw='lower', xy_bounds=None, resample_walls=False):
         """Build (or rebuild) a closed cast model node from an open IOS arch."""
         name = f"{source_model.GetName()}_cast"
         node = slicer.mrmlScene.GetFirstNodeByName(name)
         if node is None:
             node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", name)
         node.SetAndObservePolyData(
-            self._buildCastPolyData(source_model.GetPolyData(), jaw=jaw, xy_bounds=xy_bounds)
+            self._buildCastPolyData(source_model.GetPolyData(), jaw=jaw,
+                                    xy_bounds=xy_bounds, resample_walls=resample_walls)
         )
         node.CreateDefaultDisplayNodes()
         self.applyDentalCastMaterial(node)
