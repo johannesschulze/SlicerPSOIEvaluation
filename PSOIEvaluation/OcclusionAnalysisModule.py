@@ -663,59 +663,49 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
                 if _dn and _m.GetID() in saved_opacities:
                     _dn.SetOpacity(saved_opacities[_m.GetID()])
 
+        roi_holder = [None]
+
         dlg = qt.QDialog(slicer.util.mainWindow())
         dlg.setWindowTitle(f"Trim  —  {model_node.GetName()}")
-        dlg.setMinimumWidth(340)
+        dlg.setMinimumWidth(360)
         layout = qt.QVBoxLayout(dlg)
 
-        info = qt.QLabel(
-            "Select an existing curve <b>or</b> draw a new one.\n"
-            "Everything outside the outline is removed."
-        )
-        info.setWordWrap(True)
-        layout.addWidget(info)
-
-        # ── Existing curve selector ───────────────────────────────────────
-        existingLabel = qt.QLabel("Use existing curve:")
-        existingSelector = slicer.qMRMLNodeComboBox()
-        existingSelector.nodeTypes    = ["vtkMRMLMarkupsClosedCurveNode"]
-        existingSelector.noneEnabled  = True
-        existingSelector.addEnabled   = False
-        existingSelector.removeEnabled = False
-        existingSelector.setMRMLScene(slicer.mrmlScene)
-        existingRow = qt.QHBoxLayout()
-        existingRow.addWidget(existingLabel)
-        existingRow.addWidget(existingSelector)
-        layout.addLayout(existingRow)
-
-        drawBtn     = qt.QPushButton("Draw new outline")
-        applyBtn    = qt.QPushButton("Apply trim")
-        applyAllBtn = qt.QPushButton("Apply to all models")
-        applyBtn.setEnabled(False)
-        applyAllBtn.setEnabled(False)
-        btnBox = qt.QDialogButtonBox(qt.QDialogButtonBox.Cancel)
-        layout.addWidget(drawBtn)
-        layout.addWidget(applyBtn)
-        layout.addWidget(applyAllBtn)
-        layout.addWidget(btnBox)
-
-        def _setCurveVisible(node, visible):
+        def _setNodeVisible(node, visible):
             if node is not None:
                 dn = node.GetDisplayNode()
                 if dn:
                     dn.SetVisibility(visible)
 
-        def _onExistingSelected(node):
-            _setCurveVisible(curve_holder[0], False)   # hide previous
-            curve_holder[0] = node
-            _setCurveVisible(node, True)               # show newly selected
-            applyBtn.setEnabled(node is not None)
-            applyAllBtn.setEnabled(node is not None)
+        def _updateApplyButtons():
+            enabled = curve_holder[0] is not None or roi_holder[0] is not None
+            applyBtn.setEnabled(enabled)
+            applyAllBtn.setEnabled(enabled)
 
-        existingSelector.connect("currentNodeChanged(vtkMRMLNode*)", _onExistingSelected)
+        # ── XY outline (closed curve) ─────────────────────────────────────
+        layout.addWidget(qt.QLabel("<b>XY outline</b>"))
+        curveSelector = slicer.qMRMLNodeComboBox()
+        curveSelector.nodeTypes    = ["vtkMRMLMarkupsClosedCurveNode"]
+        curveSelector.noneEnabled  = True
+        curveSelector.addEnabled   = False
+        curveSelector.removeEnabled = False
+        curveSelector.setMRMLScene(slicer.mrmlScene)
+        curveRow = qt.QHBoxLayout()
+        curveRow.addWidget(qt.QLabel("Curve:"))
+        curveRow.addWidget(curveSelector)
+        layout.addLayout(curveRow)
+        drawBtn = qt.QPushButton("Draw new outline")
+        layout.addWidget(drawBtn)
+
+        def _onCurveSelected(node):
+            _setNodeVisible(curve_holder[0], False)
+            curve_holder[0] = node
+            _setNodeVisible(node, True)
+            _updateApplyButtons()
+
+        curveSelector.connect("currentNodeChanged(vtkMRMLNode*)", _onCurveSelected)
 
         def _startDraw():
-            existingSelector.setCurrentNode(None)      # hides previous via _onExistingSelected
+            curveSelector.setCurrentNode(None)
             curve = slicer.mrmlScene.AddNewNodeByClass(
                 "vtkMRMLMarkupsClosedCurveNode",
                 f"_trim_{model_node.GetName()}"
@@ -726,19 +716,71 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
             selNode.SetActivePlaceNodeID(curve.GetID())
             intNode = slicer.app.applicationLogic().GetInteractionNode()
             intNode.SetCurrentInteractionMode(intNode.Place)
-            existingSelector.setCurrentNode(curve)     # shows new curve via _onExistingSelected
+            curveSelector.setCurrentNode(curve)
+
+        # ── Z bounds (ROI box) ────────────────────────────────────────────
+        layout.addWidget(qt.QLabel("<b>Z bounds</b>"))
+        roiSelector = slicer.qMRMLNodeComboBox()
+        roiSelector.nodeTypes    = ["vtkMRMLMarkupsROINode"]
+        roiSelector.noneEnabled  = True
+        roiSelector.addEnabled   = False
+        roiSelector.removeEnabled = False
+        roiSelector.setMRMLScene(slicer.mrmlScene)
+        roiRow = qt.QHBoxLayout()
+        roiRow.addWidget(qt.QLabel("Bounds box:"))
+        roiRow.addWidget(roiSelector)
+        layout.addLayout(roiRow)
+        createRoiBtn = qt.QPushButton("Create bounds box")
+        layout.addWidget(createRoiBtn)
+
+        def _onRoiSelected(node):
+            _setNodeVisible(roi_holder[0], False)
+            roi_holder[0] = node
+            _setNodeVisible(node, True)
+            _updateApplyButtons()
+            if node is not None:
+                slicer.app.layoutManager().threeDWidget(0).threeDView().lookFromAxis(
+                    ctk.ctkAxesWidget.Anterior
+                )
+
+        roiSelector.connect("currentNodeChanged(vtkMRMLNode*)", _onRoiSelected)
+
+        def _createRoi():
+            roiSelector.setCurrentNode(None)
+            roi = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLMarkupsROINode",
+                f"_bounds_{model_node.GetName()}"
+            )
+            b = [0.0] * 6
+            model_node.GetRASBounds(b)
+            roi.SetCenter((b[0]+b[1])/2, (b[2]+b[3])/2, (b[4]+b[5])/2)
+            roi.SetSize(b[1]-b[0], b[3]-b[2], b[5]-b[4])
+            roi.GetDisplayNode().SetHandlesInteractive(True)
+            roiSelector.setCurrentNode(roi)
+            threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()
+            threeDView.lookFromAxis(ctk.ctkAxesWidget.Anterior)
+
+        # ── Action buttons ────────────────────────────────────────────────
+        applyBtn    = qt.QPushButton("Apply trim")
+        applyAllBtn = qt.QPushButton("Apply to all models")
+        applyBtn.setEnabled(False)
+        applyAllBtn.setEnabled(False)
+        btnBox = qt.QDialogButtonBox(qt.QDialogButtonBox.Cancel)
+        layout.addWidget(applyBtn)
+        layout.addWidget(applyAllBtn)
+        layout.addWidget(btnBox)
+
+        def _hideMarkups():
+            _setNodeVisible(curve_holder[0], False)
+            _setNodeVisible(roi_holder[0], False)
 
         def _applyTrim():
-            if curve_holder[0] is None:
-                return
-            self.logic.trimModelWithCurve(model_node, curve_holder[0])
-            _setCurveVisible(curve_holder[0], False)
+            self.logic.trimModelWithCurve(model_node, curve_holder[0], roi_holder[0])
+            _hideMarkups()
             _restoreOpacities()
             dlg.accept()
 
         def _applyToAll():
-            if curve_holder[0] is None:
-                return
             all_models = []
             for r in self._timepointRows:
                 tp = r["tp"]
@@ -747,19 +789,20 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
                 if tp.lowerModel:
                     all_models.append(tp.lowerModel)
             for m in all_models:
-                self.logic.trimModelWithCurve(m, curve_holder[0])
-            _setCurveVisible(curve_holder[0], False)
+                self.logic.trimModelWithCurve(m, curve_holder[0], roi_holder[0])
+            _hideMarkups()
             _restoreOpacities()
             dlg.accept()
 
         def _cancel():
-            _setCurveVisible(curve_holder[0], False)
+            _hideMarkups()
             _restoreOpacities()
             intNode = slicer.app.applicationLogic().GetInteractionNode()
             intNode.SetCurrentInteractionMode(intNode.ViewTransform)
             dlg.reject()
 
         drawBtn.connect(    "clicked(bool)", lambda _: _startDraw())
+        createRoiBtn.connect("clicked(bool)", lambda _: _createRoi())
         applyBtn.connect(   "clicked(bool)", lambda _: _applyTrim())
         applyAllBtn.connect("clicked(bool)", lambda _: _applyToAll())
         btnBox.rejected.connect(_cancel)
@@ -1201,13 +1244,14 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             origShVisibility[_item] = shNode.GetItemDisplayVisibility(_item)
             shNode.SetItemDisplayVisibility(_item, True)
 
-        # Hide all closed-curve markup nodes AFTER the SH override so the
-        # SH "make everything visible" pass cannot undo the hiding.
+        # Hide trim markup nodes (curves + ROI boxes) AFTER the SH override so
+        # the SH "make everything visible" pass cannot undo the hiding.
         origMarkupVisibility = {}
-        for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLMarkupsClosedCurveNode")):
-            n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLMarkupsClosedCurveNode")
-            origMarkupVisibility[n.GetID()] = n.GetDisplayVisibility()
-            n.SetDisplayVisibility(False)
+        for cls in ("vtkMRMLMarkupsClosedCurveNode", "vtkMRMLMarkupsROINode"):
+            for i in range(slicer.mrmlScene.GetNumberOfNodesByClass(cls)):
+                n = slicer.mrmlScene.GetNthNodeByClass(i, cls)
+                origMarkupVisibility[n.GetID()] = n.GetDisplayVisibility()
+                n.SetDisplayVisibility(False)
 
         # ── Pre-compute shared butterfly hinge ────────────────────────────
         # Posterior border of the upper model with the largest AP extent,
@@ -1750,11 +1794,11 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             if dn and n.GetID() in origVisibility:
                 dn.SetVisibility(origVisibility[n.GetID()])
         if origMarkupVisibility:
-            for i in range(slicer.mrmlScene.GetNumberOfNodesByClass("vtkMRMLMarkupsClosedCurveNode")):
-                n = slicer.mrmlScene.GetNthNodeByClass(i, "vtkMRMLMarkupsClosedCurveNode")
-                dn = n.GetDisplayNode()
-                if dn and n.GetID() in origMarkupVisibility:
-                    dn.SetVisibility(origMarkupVisibility[n.GetID()])
+            for cls in ("vtkMRMLMarkupsClosedCurveNode", "vtkMRMLMarkupsROINode"):
+                for i in range(slicer.mrmlScene.GetNumberOfNodesByClass(cls)):
+                    n = slicer.mrmlScene.GetNthNodeByClass(i, cls)
+                    if n.GetID() in origMarkupVisibility:
+                        n.SetDisplayVisibility(origMarkupVisibility[n.GetID()])
 
     # ── Occlusion maps ───────────────────────────────────────────────────────
 
@@ -2165,43 +2209,57 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
     # ── Trimming ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def trimModelWithCurve(model_node, curve_node):
-        """Clip model in-place to the XY-projected outline of a closed markup curve.
+    def trimModelWithCurve(model_node, curve_node=None, roi_node=None):
+        """Clip model in-place using an optional XY outline curve and/or Z bounds ROI.
 
-        vtkImplicitSelectionLoop projects every model vertex onto the plane of
-        the loop, so the clip is a vertical extrusion of the drawn outline —
-        independent of the Z level at which the user drew the curve.
+        curve_node: vtkMRMLMarkupsClosedCurveNode — clips as vertical extrusion
+                    of the XY-projected outline (strict Z-axis normal).
+        roi_node:   vtkMRMLMarkupsROINode — clips to the ROI's Z extent only
+                    (upper and lower bounds); XY extent is ignored.
         """
-        if model_node is None or curve_node is None:
+        if model_node is None or (curve_node is None and roi_node is None):
             return
         poly = model_node.GetPolyData()
         if poly is None or poly.GetNumberOfPoints() == 0:
             return
 
-        world_pts = curve_node.GetCurvePointsWorld()
-        if world_pts is None or world_pts.GetNumberOfPoints() < 3:
-            slicer.util.warningDisplay("Curve has too few points — place more control points.")
-            return
+        current = poly
 
-        # Project to Z=0 so the loop lies strictly in the XY plane.
-        # vtkImplicitSelectionLoop then clips as a vertical extrusion (normal = Z).
-        xy_pts = vtk.vtkPoints()
-        xy_pts.SetNumberOfPoints(world_pts.GetNumberOfPoints())
-        for i in range(world_pts.GetNumberOfPoints()):
-            p = world_pts.GetPoint(i)
-            xy_pts.SetPoint(i, p[0], p[1], 0.0)
+        # ── XY clip via closed curve ──────────────────────────────────────
+        if curve_node is not None:
+            world_pts = curve_node.GetCurvePointsWorld()
+            if world_pts is None or world_pts.GetNumberOfPoints() < 3:
+                slicer.util.warningDisplay("Curve has too few points — place more control points.")
+                return
+            xy_pts = vtk.vtkPoints()
+            xy_pts.SetNumberOfPoints(world_pts.GetNumberOfPoints())
+            for i in range(world_pts.GetNumberOfPoints()):
+                p = world_pts.GetPoint(i)
+                xy_pts.SetPoint(i, p[0], p[1], 0.0)
+            sel_loop = vtk.vtkImplicitSelectionLoop()
+            sel_loop.SetLoop(xy_pts)
+            clipper = vtk.vtkClipPolyData()
+            clipper.SetInputData(current)
+            clipper.SetClipFunction(sel_loop)
+            clipper.InsideOutOn()
+            clipper.Update()
+            current = clipper.GetOutput()
 
-        sel_loop = vtk.vtkImplicitSelectionLoop()
-        sel_loop.SetLoop(xy_pts)
-
-        clipper = vtk.vtkClipPolyData()
-        clipper.SetInputData(poly)
-        clipper.SetClipFunction(sel_loop)
-        clipper.InsideOutOn()   # keep inside (negative) region
-        clipper.Update()
+        # ── Z clip via ROI bounds ─────────────────────────────────────────
+        if roi_node is not None:
+            b = [0.0] * 6
+            roi_node.GetRASBounds(b)
+            box = vtk.vtkBox()
+            box.SetBounds(b[0], b[1], b[2], b[3], b[4], b[5])
+            clip_z = vtk.vtkClipPolyData()
+            clip_z.SetInputData(current)
+            clip_z.SetClipFunction(box)
+            clip_z.InsideOutOn()   # vtkBox is negative inside → InsideOut keeps inside
+            clip_z.Update()
+            current = clip_z.GetOutput()
 
         normals = vtk.vtkPolyDataNormals()
-        normals.SetInputData(clipper.GetOutput())
+        normals.SetInputData(current)
         normals.ComputePointNormalsOn()
         normals.ComputeCellNormalsOff()
         normals.SplittingOff()
