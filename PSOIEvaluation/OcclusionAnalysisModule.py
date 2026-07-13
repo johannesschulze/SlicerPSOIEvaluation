@@ -641,7 +641,7 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         # Switch to the axis that shows the XY trim plane:
         # upper → look from inferior (camera below, looking up)
         # lower → look from superior (camera above, looking down)
-        threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()
+        threeDView =    
         axis = ctk.ctkAxesWidget.Inferior if jaw == 'upper' else ctk.ctkAxesWidget.Superior
         threeDView.lookFromAxis(axis)
 
@@ -1353,6 +1353,7 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                         globalLateralCams[suffix] = (f, c, (0, 0, 1))
 
         print(f"\n=== Screenshots → {outputDir} ===")
+        threeDView.setShadowsVisibility(True) # enable SSAO (Shadows)
         for tp in timepoints:
             upperMap = slicer.mrmlScene.GetFirstNodeByName(
                 f"{tp.upperModel.GetName()}_distance"
@@ -2302,14 +2303,16 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
                 raw_bounds[3] = max(raw_bounds[3], b[3])
             if tp.upperModel:
                 tp.upperCast = self._createCastNode(tp.upperModel, jaw='upper',
-                                                    xy_bounds=raw_bounds, resample_walls=resample_walls)
+                                                    xy_bounds=raw_bounds, resample_walls=resample_walls,
+                                                    label=tp.label)
             if tp.lowerModel:
                 tp.lowerCast = self._createCastNode(tp.lowerModel, jaw='lower',
-                                                    xy_bounds=raw_bounds, resample_walls=resample_walls)
+                                                    xy_bounds=raw_bounds, resample_walls=resample_walls,
+                                                    label=tp.label)
 
     @staticmethod
     def _buildCastPolyData(poly_data, jaw='lower', prism_height=5.0, margin=2.5,
-                           xy_bounds=None, resample_walls=False):
+                           xy_bounds=None, resample_walls=False, label=''):
         """Build cast geometry: gingival walls + trimmed-cast base prism.
 
         Stage 1 – Walls: extrude the largest boundary loop straight to
@@ -2539,15 +2542,176 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
         hex_nrmls.SetFeatureAngle(1.0)
         hex_nrmls.Update()
 
+        # ── Text label on posterior face (cell-selection inset) ──────────
+        # vtkBooleanOperationPolyDataFilter fails for the non-convex hex prism.
+        # Instead: (1) remove hex face cells whose centroid lies inside the text
+        # solid, (2) add the reversed inner text-solid walls as cavity surfaces.
+        hex_base_pd = hex_nrmls.GetOutput()
+        if label:
+            txt = vtk.vtkVectorText()
+            txt.SetText(label)
+            txt.Update()
+            tb = txt.GetOutput().GetBounds()
+            text_w = tb[1] - tb[0]
+            text_h = tb[3] - tb[2]
+            if text_w > 0 and text_h > 0:
+                target_h = prism_height * 0.65
+                scale    = target_h / text_h
+                z_mid    = (z_wall + z_face) / 2
+
+                overhang = 0.3   # mm the solid protrudes past the face
+                depth    = 0.2   # mm the solid goes into the face
+
+                # Build text solid: spans ymin_b−overhang (outside) to ymin_b+depth (inside).
+                # After RotateX(90): local −Z → world +Y; pre-shift +Z by overhang/scale
+                # positions the letter fronts at ymin_b−overhang.
+                extrude = vtk.vtkLinearExtrusionFilter()
+                extrude.SetInputData(txt.GetOutput())
+                extrude.SetExtrusionTypeToVectorExtrusion()
+                extrude.SetVector(0, 0, -1)
+                extrude.SetScaleFactor((overhang + depth) / scale)
+                extrude.CappingOn()
+                extrude.Update()
+
+                xfm = vtk.vtkTransform()
+                xfm.PostMultiply()
+                xfm.Translate(-(tb[0]+tb[1])/2, -(tb[2]+tb[3])/2, overhang/scale)
+                xfm.Scale(scale, scale, scale)
+                xfm.RotateX(90)
+                xfm.Translate(xmid, ymin_b, z_mid)
+                xfmF = vtk.vtkTransformPolyDataFilter()
+                xfmF.SetInputData(extrude.GetOutput())
+                xfmF.SetTransform(xfm)
+                xfmF.Update()
+
+                tri_txt = vtk.vtkTriangleFilter()
+                tri_txt.SetInputData(xfmF.GetOutput())
+                tri_txt.Update()
+                clean_txt = vtk.vtkCleanPolyData()
+                clean_txt.SetInputData(tri_txt.GetOutput())
+                clean_txt.SetTolerance(0.001)
+                clean_txt.Update()
+                txt_pd = clean_txt.GetOutput()
+
+                try:
+                    # ── 1. Remove hex cells whose centroid is inside the text solid ──
+                    hex_pd = vtk.vtkPolyData()
+                    hex_pd.DeepCopy(hex_nrmls.GetOutput())
+
+                    hex_ctrs = vtk.vtkCellCenters()
+                    hex_ctrs.SetInputData(hex_pd)
+                    hex_ctrs.VertexCellsOn()
+                    hex_ctrs.Update()
+
+                    sel = vtk.vtkSelectEnclosedPoints()
+                    sel.SetInputData(hex_ctrs.GetOutput())
+                    sel.SetSurfaceData(txt_pd)
+                    sel.SetTolerance(0.001)
+                    sel.Update()
+
+                    inside_pts = sel.GetOutput().GetPointData().GetArray("SelectedPoints")
+                    n_hc = hex_pd.GetNumberOfCells()
+                    flag = vtk.vtkFloatArray()
+                    flag.SetName("_itxt")
+                    flag.SetNumberOfTuples(n_hc)
+                    for ci in range(n_hc):
+                        flag.SetValue(ci, inside_pts.GetValue(ci) if inside_pts else 0.0)
+                    hex_pd.GetCellData().AddArray(flag)
+
+                    thr = vtk.vtkThreshold()
+                    thr.SetInputData(hex_pd)
+                    thr.SetInputArrayToProcess(
+                        0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_CELLS, "_itxt")
+                    thr.ThresholdByLower(0.5)   # keep cells outside the text solid
+                    thr.Update()
+                    geo1 = vtk.vtkGeometryFilter()
+                    geo1.SetInputData(thr.GetOutput())
+                    geo1.Update()
+                    hex_carved = geo1.GetOutput()
+
+                    # ── 2. Extract text cavity walls (faces at or behind the face plane) ──
+                    # Using centroid_y ≥ ymin_b as proxy for "inside the hex prism"
+                    # avoids needing the hex mesh to be a valid closed manifold.
+                    n_tc = txt_pd.GetNumberOfCells()
+                    flag2 = vtk.vtkFloatArray()
+                    flag2.SetName("_ihex")
+                    flag2.SetNumberOfTuples(n_tc)
+                    for ci in range(n_tc):
+                        cell = txt_pd.GetCell(ci)
+                        np_ = cell.GetNumberOfPoints()
+                        cy = sum(txt_pd.GetPoint(cell.GetPointId(k))[1]
+                                 for k in range(np_)) / np_
+                        flag2.SetValue(ci, 1.0 if cy >= ymin_b - 0.01 else 0.0)
+                    txt_pd.GetCellData().AddArray(flag2)
+
+                    thr2 = vtk.vtkThreshold()
+                    thr2.SetInputData(txt_pd)
+                    thr2.SetInputArrayToProcess(
+                        0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_CELLS, "_ihex")
+                    thr2.ThresholdByUpper(0.5)
+                    thr2.Update()
+                    geo2 = vtk.vtkGeometryFilter()
+                    geo2.SetInputData(thr2.GetOutput())
+                    geo2.Update()
+
+                    # Reverse: text inner faces point outward from text = into cavity from hex
+                    rev = vtk.vtkReverseSense()
+                    rev.SetInputData(geo2.GetOutput())
+                    rev.ReverseCellsOn()
+                    rev.ReverseNormalsOn()
+                    rev.Update()
+
+                    # ── 3. Combine carved hex + cavity walls ─────────────────────
+                    app = vtk.vtkAppendPolyData()
+                    app.AddInputData(hex_carved)
+                    app.AddInputData(rev.GetOutput())
+                    app.Update()
+
+                    nrm = vtk.vtkPolyDataNormals()
+                    nrm.SetInputData(app.GetOutput())
+                    nrm.ConsistencyOn()
+                    nrm.SplittingOn()
+                    nrm.SetFeatureAngle(30.0)
+                    nrm.Update()
+
+                    if nrm.GetOutput().GetNumberOfPoints() > 0:
+                        hex_base_pd = nrm.GetOutput()
+
+                except Exception as _e:
+                    print(f"[castLabel] cell-selection failed: {_e} — using raised text")
+                    extrude_r = vtk.vtkLinearExtrusionFilter()
+                    extrude_r.SetInputData(txt.GetOutput())
+                    extrude_r.SetExtrusionTypeToVectorExtrusion()
+                    extrude_r.SetVector(0, 0, 1)
+                    extrude_r.SetScaleFactor(0.2 / scale)
+                    extrude_r.CappingOn()
+                    extrude_r.Update()
+                    xfm_r = vtk.vtkTransform()
+                    xfm_r.PostMultiply()
+                    xfm_r.Translate(-(tb[0]+tb[1])/2, -(tb[2]+tb[3])/2, 0)
+                    xfm_r.Scale(scale, scale, scale)
+                    xfm_r.RotateX(90)
+                    xfm_r.Translate(xmid, ymin_b, z_mid)
+                    xfmF_r = vtk.vtkTransformPolyDataFilter()
+                    xfmF_r.SetInputData(extrude_r.GetOutput())
+                    xfmF_r.SetTransform(xfm_r)
+                    xfmF_r.Update()
+                    app_r = vtk.vtkAppendPolyData()
+                    app_r.AddInputData(hex_nrmls.GetOutput())
+                    app_r.AddInputData(xfmF_r.GetOutput())
+                    app_r.Update()
+                    hex_base_pd = app_r.GetOutput()
+
         # ── Combine walls + prism ─────────────────────────────────────────
         final = vtk.vtkAppendPolyData()
         final.AddInputData(wall_nrmls.GetOutput())
-        final.AddInputData(hex_nrmls.GetOutput())
+        final.AddInputData(hex_base_pd)
         final.Update()
 
         return final.GetOutput()
 
-    def _createCastNode(self, source_model, jaw='lower', xy_bounds=None, resample_walls=False):
+    def _createCastNode(self, source_model, jaw='lower', xy_bounds=None,
+                        resample_walls=False, label=''):
         """Build (or rebuild) a closed cast model node from an open IOS arch."""
         name = f"{source_model.GetName()}_cast"
         node = slicer.mrmlScene.GetFirstNodeByName(name)
@@ -2555,7 +2719,8 @@ class OcclusionAnalysisModuleLogic(ScriptedLoadableModuleLogic):
             node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode", name)
         node.SetAndObservePolyData(
             self._buildCastPolyData(source_model.GetPolyData(), jaw=jaw,
-                                    xy_bounds=xy_bounds, resample_walls=resample_walls)
+                                    xy_bounds=xy_bounds, resample_walls=resample_walls,
+                                    label=label)
         )
         node.CreateDefaultDisplayNodes()
         self.applyDentalCastMaterial(node)
