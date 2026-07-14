@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="en" class="h-100" data-bs-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="generator" content="pandoc">
+    <meta name="author" content="Johannes Schulze">
+    
+    <title>Occlusion Analysis Workflow</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    
+    <!-- Bootstrap Icon -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" integrity="sha384-tViUnnbYAV00FLIhhi3v/dWt3Jxw4gZQcNoSCxCIFNJVCx7/D55/wXsrNIRANwdD" crossorigin="anonymous">
+    
+    <!-- Highlight.js Styles -->
+    <link rel="stylesheet" id="highlight-style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/stackoverflow-light.min.css">
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="https://ashki23.github.io/docs.css">
+    <link rel="stylesheet" href="../styles.css">
+    
+    <!-- After header contents -->
+        <!-- Add favicon here -->
+        <!-- Add site-verifications here -->
+      </head>
+  <body class="d-flex flex-column h-100" data-bs-spy="scroll" data-bs-target="#TableOfContents">
+    <!-- Before body contents -->
+        <nav class="navbar bd-navbar navbar-expand-lg fixed-top">
+          <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap">
+            <!-- Brand -->
+            <a class="navbar-brand" href="#">Occlusion Analysis Module</a>
+
+            <!-- Toggler -->
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+              <i class="bi bi-list fs-1"></i>
+            </button>
+
+            <!-- Navbar Content -->
+            <div class="collapse navbar-collapse scrollable-navbar" id="navbarNav">
+              <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+              </ul>
+
+              <!-- Divider for larger screens -->
+              <div class="vr d-none d-lg-flex mx-2 my-1 nav-line"></div>
+
+              <!-- Divider for smaller screens -->
+              <hr class="d-lg-none nav-line">
+
+              <!-- Theme Dropdown -->
+              <ul class="navbar-nav">
+                <li class="nav-item dropdown">
+                  <button class="btn btn-link nav-link dropdown-toggle" type="button" id="themeDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-circle-half"></i>
+        	    <span class="d-lg-none ms-2">Toggle theme</span>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="themeDropdown">
+                    <li>
+                      <a class="dropdown-item align-items-center" data-theme="light">
+                        <i class="bi bi-sun-fill me-2 opacity-50"></i> Light
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item align-items-center" data-theme="dark">
+                        <i class="bi bi-moon-stars-fill me-2 opacity-50"></i> Dark
+                      </a>
+                    </li>
+                  </ul>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </nav>
+        
+    <div class="container-xxl bd-gutter bd-layout mb-5">
+      <main class="bd-main order-1">
+	
+	<!-- Tiltle -->
+	<h1 class="bd-intro ps-lg-2 pt-2" id="title">Occlusion Analysis
+Workflow</h1>
+	
+		<!-- Table of Contents -->
+	<div class="bd-toc mt-lg-0 mb-lg-5 mt-3 mb-5 px-sm-1 text-body-secondary">
+	  <strong class="d-md-block d-none h6 my-2 ms-3">On this page</strong>
+	  <hr class="d-md-block d-none my-2 ms-3">
+	  <div class="collapse bd-toc-collapse" id="tocContents">
+	    <nav id="TableOfContents">
+	      <ul>
+      <li><a href="#prerequisites"
+      id="toc-prerequisites">Prerequisites</a></li>
+      <li><a href="#overview" id="toc-overview">Overview</a></li>
+      <li><a href="#step-1-add-timepoints"
+      id="toc-step-1-add-timepoints">Step 1: Add Timepoints</a></li>
+      <li><a href="#step-2-trim-models-optional"
+      id="toc-step-2-trim-models-optional">Step 2: Trim Models
+      <em>(optional)</em></a>
+      <ul>
+      <li><a href="#xy-outline-trim" id="toc-xy-outline-trim">XY Outline
+      Trim</a></li>
+      <li><a href="#bounds-box-trim" id="toc-bounds-box-trim">Bounds Box
+      Trim</a></li>
+      <li><a href="#applying-the-trim"
+      id="toc-applying-the-trim">Applying the Trim</a></li>
+      </ul></li>
+      <li><a href="#step-3-orient-t0" id="toc-step-3-orient-t0">Step 3:
+      Orient T0</a></li>
+      <li><a href="#step-4-register-t1-t2-to-t0"
+      id="toc-step-4-register-t1-t2-to-t0">Step 4: Register T1, T2, … to
+      T0</a></li>
+      <li><a href="#step-5-settings" id="toc-step-5-settings">Step 5:
+      Settings</a></li>
+      <li><a href="#step-6-run-analysis"
+      id="toc-step-6-run-analysis">Step 6: Run Analysis</a>
+      <ul>
+      <li><a href="#output-tables" id="toc-output-tables">Output
+      Tables</a></li>
+      <li><a href="#comparison-pairs"
+      id="toc-comparison-pairs">Comparison Pairs</a></li>
+      </ul></li>
+      <li><a href="#metrics-reference"
+      id="toc-metrics-reference">Metrics Reference</a>
+      <ul>
+      <li><a href="#oca-occlusal-contact-area-mm²"
+      id="toc-oca-occlusal-contact-area-mm²">OCA — Occlusal Contact Area
+      (mm²)</a></li>
+      <li><a href="#ocn-occlusal-contact-number"
+      id="toc-ocn-occlusal-contact-number">OCN — Occlusal Contact
+      Number</a></li>
+      <li><a href="#oas-occlusal-asymmetry-score-01"
+      id="toc-oas-occlusal-asymmetry-score-01">OAS — Occlusal Asymmetry
+      Score (0–1)</a></li>
+      <li><a href="#sensitivity-analysis-and-robustness"
+      id="toc-sensitivity-analysis-and-robustness">Sensitivity Analysis
+      and Robustness</a></li>
+      <li><a href="#verdict" id="toc-verdict">Verdict</a></li>
+      </ul></li>
+      <li><a href="#step-7-occlusion-maps-optional"
+      id="toc-step-7-occlusion-maps-optional">Step 7: Occlusion Maps
+      <em>(optional)</em></a></li>
+      <li><a href="#step-8-cast-models-optional"
+      id="toc-step-8-cast-models-optional">Step 8: Cast Models
+      <em>(optional)</em></a>
+      <ul>
+      <li><a href="#geometry" id="toc-geometry">Geometry</a></li>
+      <li><a href="#smooth-cast-walls" id="toc-smooth-cast-walls">Smooth
+      Cast Walls</a></li>
+      </ul></li>
+      <li><a href="#step-9-screenshots" id="toc-step-9-screenshots">Step
+      9: Screenshots</a>
+      <ul>
+      <li><a href="#views" id="toc-views">Views</a></li>
+      <li><a href="#per-view-options" id="toc-per-view-options">Per-View
+      Options</a></li>
+      <li><a href="#other-settings" id="toc-other-settings">Other
+      Settings</a></li>
+      <li><a href="#file-names" id="toc-file-names">File Names</a></li>
+      </ul></li>
+      <li><a href="#step-10-generate-report"
+      id="toc-step-10-generate-report">Step 10: Generate Report</a>
+      <ul>
+      <li><a href="#report-contents" id="toc-report-contents">Report
+      Contents</a></li>
+      </ul></li>
+      <li><a href="#tips-and-notes" id="toc-tips-and-notes">Tips and
+      Notes</a></li>
+      <li><a href="#troubleshooting"
+      id="toc-troubleshooting">Troubleshooting</a></li>
+      </ul>
+	    </nav>
+	  </div>
+	</div>
+		
+	<!-- Main Content -->
+	<div class="bd-content ps-lg-2">
+	  <p><strong>Module:</strong> OcclusionAnalysisModule<br />
+  <strong>Purpose:</strong> Longitudinal quantitative analysis of
+  occlusal contact change from intraoral surface scans (IOS) in maximum
+  intercuspation position (MIP)<br />
+  <strong>Target audience:</strong> Clinical staff and researchers in
+  orthognathic and reconstructive surgery</p>
+  <hr />
+  <h1 id="prerequisites">Prerequisites</h1>
+  <ul>
+  <li>3D Slicer (version 5.0 or later)</li>
+  <li>The extension <strong>SlicerPSOIEvaluation</strong> must be
+  installed</li>
+  <li>IOS scans in MIP as STL or OBJ surface models, one upper and one
+  lower arch per timepoint</li>
+  <li>All scans must already be in a common coordinate system
+  <strong>or</strong> aligned within this module via the built-in ICP
+  registration</li>
+  <li>PDF report generation requires <strong>WeasyPrint</strong>
+  (installed automatically via pip on first use)</li>
+  </ul>
+  <p>Open the module: Press <strong>CTRL+F</strong> (<em>Module
+  Finder</em>) and type “Occlusion”, or navigate to <em>PSOI Evaluation
+  → Occlusion Analysis</em>.</p>
+  <hr />
+  <h1 id="overview">Overview</h1>
+  <p>The module computes the <em>occlusal change vector</em> — three
+  complementary metrics (OCA, OCN, OAS) — by comparing MIP intraoral
+  scans across an arbitrary number of timepoints.</p>
+  <table>
+  <colgroup>
+  <col style="width: 50%" />
+  <col style="width: 50%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Step</th>
+  <th>Task</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>1. Add timepoints</strong></td>
+  <td>Assign upper and lower arch models to each timepoint</td>
+  </tr>
+  <tr>
+  <td><strong>2. Trim models</strong> <em>(optional)</em></td>
+  <td>Remove excess scan geometry using a curve outline and/or bounding
+  box</td>
+  </tr>
+  <tr>
+  <td><strong>3. Orient T0</strong></td>
+  <td>Set the reference orientation interactively</td>
+  </tr>
+  <tr>
+  <td><strong>4. Register T1, T2, …</strong></td>
+  <td>Rigid ICP alignment of all follow-up scans to T0</td>
+  </tr>
+  <tr>
+  <td><strong>5. Settings</strong></td>
+  <td>Configure the contact threshold τ, sector count, and minimum
+  area</td>
+  </tr>
+  <tr>
+  <td><strong>6. Run analysis</strong></td>
+  <td>Compute OCA, OCN, and OAS; populate result tables</td>
+  </tr>
+  <tr>
+  <td><strong>7. Occlusion maps</strong> <em>(optional)</em></td>
+  <td>Colour-coded distance maps for visual inspection</td>
+  </tr>
+  <tr>
+  <td><strong>8. Cast models</strong> <em>(optional)</em></td>
+  <td>Orthodontic art-base casts for standardised screenshots</td>
+  </tr>
+  <tr>
+  <td><strong>9. Screenshots</strong></td>
+  <td>Render PNG images in standardised views</td>
+  </tr>
+  <tr>
+  <td><strong>10. Report</strong></td>
+  <td>Generate a self-contained HTML/PDF report</td>
+  </tr>
+  </tbody>
+  </table>
+  <hr />
+  <h1 id="step-1-add-timepoints">Step 1: Add Timepoints</h1>
+  <p>Each timepoint represents one clinical time point (T0 = reference /
+  immediate postoperative, T1, T2 = follow-up visits).</p>
+  <ol type="1">
+  <li>Click <strong>+ Add timepoint</strong> to add a new row.</li>
+  <li>Enter a short <strong>label</strong> (e.g. <code>T0</code>,
+  <code>T1</code>, <code>6m</code>, <code>12m</code>). The label is used
+  in table column headers, file names, and on the cast model.</li>
+  <li>In the <strong>Upper</strong> field, select the upper arch IOS
+  mesh node for this timepoint.</li>
+  <li>In the <strong>Lower</strong> field, select the lower arch IOS
+  mesh node.</li>
+  <li>Repeat for all timepoints.</li>
+  </ol>
+  <blockquote>
+  <p><strong>Note:</strong> The order of timepoints matters. T0 is
+  always treated as the reference for ICP registration and delta
+  calculations. The first row is T0.</p>
+  </blockquote>
+  <hr />
+  <h1 id="step-2-trim-models-optional">Step 2: Trim Models
+  <em>(optional)</em></h1>
+  <p>Clicking the <strong>✂</strong> button next to an arch model opens
+  the trim dialog. This allows excess geometry — roots, gingiva, scanner
+  artefacts — to be removed before analysis.</p>
+  <p>While the dialog is open: - All visible jaw models become
+  <strong>semi-transparent</strong> (35 % opacity). - The 3D view
+  automatically switches to the <strong>inferior</strong> view (upper
+  arch) or <strong>superior</strong> view (lower arch) for a clear
+  occlusal perspective.</p>
+  <h2 id="xy-outline-trim">XY Outline Trim</h2>
+  <p>Restricts the model to the region enclosed by a user-drawn closed
+  curve, projected vertically (Z-axis). This accounts for the
+  arch-shaped anatomy of the jaw and is preferable to a simple
+  rectangular bounding box.</p>
+  <p><strong>To draw a new outline:</strong></p>
+  <ol type="1">
+  <li>Click <strong>Draw new outline</strong> — markup placement mode is
+  activated.</li>
+  <li>Click around the desired arch boundary in the 3D view. Control
+  points snap to the XY plane.</li>
+  <li>Close the curve by clicking on the first control point.</li>
+  </ol>
+  <p><strong>To reuse an existing outline:</strong></p>
+  <ol type="1">
+  <li>Select the desired closed-curve node from the
+  <strong>Curve</strong> dropdown.</li>
+  <li>The curve is made visible for review.</li>
+  </ol>
+  <p>The clip is a strict vertical extrusion of the curve’s XY footprint
+  — the Z coordinates of the control points are ignored. Everything
+  outside the enclosed area is removed.</p>
+  <h2 id="bounds-box-trim">Bounds Box Trim</h2>
+  <p>A bounding box clips the model in all three axes, useful for
+  setting upper and lower vertical limits (e.g. to remove root tips or a
+  scanner platform) or anterior/posterior limits.</p>
+  <p><strong>To create a new bounds box:</strong></p>
+  <ol type="1">
+  <li>Click <strong>Create bounds box</strong> — an interactive ROI box
+  is placed around the current model.</li>
+  <li>The 3D view switches to the <strong>anterior</strong> view.</li>
+  <li>Drag the box handles to the desired boundaries.</li>
+  </ol>
+  <p><strong>To reuse an existing bounds box:</strong></p>
+  <ol type="1">
+  <li>Select the desired ROI node from the <strong>Bounds box</strong>
+  dropdown.</li>
+  <li>The view switches to the anterior view for review.</li>
+  </ol>
+  <p>Both constraints (curve outline and bounds box) can be active
+  simultaneously.</p>
+  <h2 id="applying-the-trim">Applying the Trim</h2>
+  <table>
+  <colgroup>
+  <col style="width: 50%" />
+  <col style="width: 50%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Button</th>
+  <th>Effect</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Apply trim</strong></td>
+  <td>Applies the active curve/box to the currently open model only</td>
+  </tr>
+  <tr>
+  <td><strong>Apply to all models</strong></td>
+  <td>Applies the same curve/box to every arch model of all
+  timepoints</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>After trimming, the curve and ROI nodes are kept in the scene
+  (hidden). They can be selected again in the trim dialog for further
+  adjustments or applied to additional models.</p>
+  <blockquote>
+  <p><strong>Note:</strong> Trimming modifies the mesh in place and
+  cannot be undone. Save the Slicer scene as <code>.mrb</code> before
+  trimming if you may need to revert.</p>
+  </blockquote>
+  <p><img src="Screenshots/02_trim_dialog.png" /></p>
+  <hr />
+  <h1 id="step-3-orient-t0">Step 3: Orient T0</h1>
+  <p>The T0 orientation defines the global reference frame for all
+  analyses and visualisations.</p>
+  <ol type="1">
+  <li>Click <strong>Orient T0 interactively</strong> — transform handles
+  appear on the T0 models.</li>
+  <li>Rotate and translate using the transform handles until:
+  <ul>
+  <li>The <strong>occlusal plane</strong> is horizontal (roughly
+  parallel to the XY plane).</li>
+  <li>The <strong>dental midline</strong> is centred on x = 0.</li>
+  <li>The <strong>posterior</strong> direction points in the −Y
+  direction.</li>
+  </ul></li>
+  <li>Click <strong>Confirm T0 orientation</strong> — the transform is
+  hardened into the mesh vertices and the transform node is
+  removed.</li>
+  </ol>
+  <blockquote>
+  <p><strong>Note:</strong> The widget pivot is fixed at world origin
+  (0, 0, 0). Use <em>ALT + drag</em> on the centre crosshair to
+  reposition the pivot if needed.</p>
+  </blockquote>
+  <blockquote>
+  <p><strong>Important:</strong> All subsequent ICP registrations and
+  distance computations use the T0 coordinate system as ground truth.
+  Confirm the orientation before proceeding.</p>
+  </blockquote>
+  <p><img src="Screenshots/03_orient_t0.png" /></p>
+  <hr />
+  <h1 id="step-4-register-t1-t2-to-t0">Step 4: Register T1, T2, … to
+  T0</h1>
+  <p>Click <strong>Register T1, T2, … to T0 (ICP)</strong>.</p>
+  <p>For each follow-up timepoint the module runs rigid iterative
+  closest-point (ICP) registration:</p>
+  <ul>
+  <li><strong>Source:</strong> Ti upper arch mesh</li>
+  <li><strong>Target:</strong> T0 upper arch mesh</li>
+  <li><strong>Result:</strong> The same rigid transform is applied to
+  both the upper and lower arch of Ti</li>
+  </ul>
+  <p>T0 is never moved. The transforms are hardened into the mesh
+  vertices after registration.</p>
+  <blockquote>
+  <p><strong>Note:</strong> ICP convergence depends on a reasonable
+  initial alignment. If T0 and a follow-up scan start in very different
+  orientations, ICP may converge to a local minimum. Pre-align the scans
+  before importing, or improve the T0 orientation in step 3 first.</p>
+  </blockquote>
+  <blockquote>
+  <p><strong>Note:</strong> Intra-timepoint (upper ↔︎ lower) MIP
+  registration is not performed by this module. The scans must already
+  be in MIP relation when imported.</p>
+  </blockquote>
+  <hr />
+  <h1 id="step-5-settings">Step 5: Settings</h1>
+  <table style="width:100%;">
+  <colgroup>
+  <col style="width: 33%" />
+  <col style="width: 27%" />
+  <col style="width: 39%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Parameter</th>
+  <th>Default</th>
+  <th>Description</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Contact threshold τ</strong></td>
+  <td><code>0.05 mm</code></td>
+  <td>Distance from the lower arch surface to the upper arch surface at
+  which a point is considered to be in contact (Liu et al. 2020). Adjust
+  between 0.01 and 0.5 mm.</td>
+  </tr>
+  <tr>
+  <td><strong>Sectors (OCN)</strong></td>
+  <td><code>6</code></td>
+  <td>Number of arch sextants for the regional OCN count (method B).
+  Range: 2 – 12.</td>
+  </tr>
+  <tr>
+  <td><strong>Minimum contact area</strong></td>
+  <td><code>0.1 mm²</code></td>
+  <td>Minimum area per sector or cluster to count as an active contact
+  region. Filters out isolated contact speckles. Range: 0 – 10 mm².</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>A <strong>sensitivity analysis</strong> is always run at τ ∈ {0.03,
+  0.05, 0.08} mm in addition to the primary threshold, regardless of the
+  τ setting.</p>
+  <hr />
+  <h1 id="step-6-run-analysis">Step 6: Run Analysis</h1>
+  <p>Click <strong>Run analysis!</strong>.</p>
+  <p>The module iterates over all timepoints and all threshold values,
+  then writes three table nodes to the Slicer scene.</p>
+  <h2 id="output-tables">Output Tables</h2>
+  <table>
+  <colgroup>
+  <col style="width: 54%" />
+  <col style="width: 45%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Table node</th>
+  <th>Contents</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><code>OcclusionVectors</code></td>
+  <td>Per-timepoint values of OCA, OCN (regional), OCN (cluster), and
+  OAS at each threshold τ</td>
+  </tr>
+  <tr>
+  <td><code>OcclusionDeltas</code></td>
+  <td>Pairwise deltas (T0→Ti and consecutive) at each τ, with robustness
+  flags and verdict</td>
+  </tr>
+  <tr>
+  <td><code>OcclusionSummary</code></td>
+  <td>One row per comparison at the primary τ — compact summary suitable
+  for export</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>The tables are visible in the Data module and can be exported as
+  CSV via right-click → <em>Export to file</em>.</p>
+  <h2 id="comparison-pairs">Comparison Pairs</h2>
+  <p>For <em>n</em> timepoints, the module computes: - <strong>Baseline
+  comparisons:</strong> T0 → T1, T0 → T2, …, T0 → T(n−1) -
+  <strong>Consecutive comparisons:</strong> T0 → T1, T1 → T2, …, T(n−2)
+  → T(n−1)</p>
+  <hr />
+  <h1 id="metrics-reference">Metrics Reference</h1>
+  <h2 id="oca-occlusal-contact-area-mm²">OCA — Occlusal Contact Area
+  (mm²)</h2>
+  <p>Total surface area of lower arch triangles within τ distance of the
+  upper arch surface. A triangle counts as <em>in contact</em> if the
+  gap at any of its three vertices is ≤ τ.</p>
+  <p>The signed distance (negative for penetration) is computed via
+  <code>vtkDistancePolyDataFilter</code>.</p>
+  <h2 id="ocn-occlusal-contact-number">OCN — Occlusal Contact
+  Number</h2>
+  <p>Computed by two independent methods reported separately:</p>
+  <p><strong>Method B — Regional (sextants):</strong> The arch is
+  divided into equal angular sectors. A sector counts as active if its
+  total contact area is ≥ <em>minimum contact area</em>. This is the
+  primary OCN output and appears in the verdict.</p>
+  <p><strong>Method A — Cluster count:</strong> Geometrically connected
+  contact patches are extracted. A patch counts if its total area is ≥
+  <em>minimum contact area</em>. Reported as a cross-check.</p>
+  <h2 id="oas-occlusal-asymmetry-score-01">OAS — Occlusal Asymmetry
+  Score (0–1)</h2>
+  <p>Normalised left–right imbalance of contact area:</p>
+  <pre><code>OAS = |A_right − A_left| / (A_right + A_left)</code></pre>
+  <p>OAS = 0 means perfect symmetry; OAS = 1 means all contact is
+  entirely unilateral. Returns <em>n/a</em> when OCA = 0 (no contact
+  detected).</p>
+  <h2 id="sensitivity-analysis-and-robustness">Sensitivity Analysis and
+  Robustness</h2>
+  <p>Each metric delta (e.g. ΔOCA = OCA_Ti − OCA_T0) is flagged as
+  <em>robust</em> if its sign is consistent across all three sensitivity
+  thresholds {0.03, 0.05, 0.08} mm. A delta that changes sign between
+  thresholds is flagged as <em>not robust</em>.</p>
+  <h2 id="verdict">Verdict</h2>
+  <p>A verdict is assigned to each comparison:</p>
+  <table>
+  <colgroup>
+  <col style="width: 22%" />
+  <col style="width: 77%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Verdict</th>
+  <th>Condition (all metrics robust)</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Improved</strong></td>
+  <td>ΔOCA &gt; 0 <strong>and</strong> ΔOCN &gt; 0 <strong>and</strong>
+  ΔOAS &lt; 0</td>
+  </tr>
+  <tr>
+  <td><strong>Worsened</strong></td>
+  <td>ΔOCA &lt; 0 <strong>and</strong> ΔOCN ≤ 0 <strong>and</strong>
+  ΔOAS &gt; 0</td>
+  </tr>
+  <tr>
+  <td><strong>Inconclusive</strong></td>
+  <td>Any robustness flag is false, or conditions for improved/worsened
+  are not met</td>
+  </tr>
+  </tbody>
+  </table>
+  <hr />
+  <h1 id="step-7-occlusion-maps-optional">Step 7: Occlusion Maps
+  <em>(optional)</em></h1>
+  <p>Click <strong>Create occlusion maps</strong>.</p>
+  <p>For each timepoint a colour-mapped model is created, showing the
+  signed distance from the lower arch surface to the upper arch surface.
+  The map is useful for identifying specific contact regions and
+  comparing their distribution across timepoints.</p>
+  <table>
+  <thead>
+  <tr>
+  <th>Setting</th>
+  <th>Value</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td>Colour range</td>
+  <td>0.0 – 0.1 mm</td>
+  </tr>
+  <tr>
+  <td>Points beyond</td>
+  <td>± 0.2 mm hidden</td>
+  </tr>
+  <tr>
+  <td>Z offset</td>
+  <td>+0.1 mm (prevents Z-fighting with the source mesh)</td>
+  </tr>
+  </tbody>
+  </table>
+  <p>Map nodes are named <code>{label}_distmap_upper</code> and appear
+  as children of the source model in the subject hierarchy.</p>
+  <hr />
+  <h1 id="step-8-cast-models-optional">Step 8: Cast Models
+  <em>(optional)</em></h1>
+  <p>Click <strong>Create cast models</strong> to generate an
+  orthodontic art-base cast for each arch of each timepoint. Casts are
+  used to produce standardised screenshots and for visual
+  inspection.</p>
+  <h2 id="geometry">Geometry</h2>
+  <p>Each cast consists of two parts: - <strong>Arch walls:</strong>
+  Extruded from the largest boundary loop of the IOS mesh. -
+  <strong>Hexagonal prism base:</strong> 5 mm height, 2.5 mm lateral
+  margin beyond the mesh bounding box, symmetric around x = 0.</p>
+  <p>The timepoint label (e.g. <code>T0</code>) is printed in raised
+  letters on the posterior face of the base.</p>
+  <h2 id="smooth-cast-walls">Smooth Cast Walls</h2>
+  <p>Click <strong>Smooth cast walls</strong> to rebuild the cast with
+  the arch boundary loop resampled to uniform arc-length spacing. This
+  eliminates vertical stripe rendering artefacts that can appear when
+  the original IOS mesh has highly irregular vertex spacing. This step
+  is optional and takes additional processing time.</p>
+  <p><img src="Screenshots/08_cast_models.png" /></p>
+  <hr />
+  <h1 id="step-9-screenshots">Step 9: Screenshots</h1>
+  <p>Set the <strong>Output folder</strong> path, then click
+  <strong>Take screenshots</strong>.</p>
+  <h2 id="views">Views</h2>
+  <table>
+  <colgroup>
+  <col style="width: 13%" />
+  <col style="width: 38%" />
+  <col style="width: 47%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>View</th>
+  <th>Camera direction</th>
+  <th>Captured by default</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Occlusal</strong></td>
+  <td>Upper: inferior; Lower: superior</td>
+  <td>Yes</td>
+  </tr>
+  <tr>
+  <td><strong>Butterfly</strong></td>
+  <td>Upper (inferior) + Lower (superior) side by side</td>
+  <td>Yes</td>
+  </tr>
+  <tr>
+  <td><strong>Buccal / lateral</strong></td>
+  <td>Left oblique, anterior, right oblique, left, posterior, right</td>
+  <td>No</td>
+  </tr>
+  </tbody>
+  </table>
+  <h2 id="per-view-options">Per-View Options</h2>
+  <p>Each view has three independent checkboxes:</p>
+  <table>
+  <colgroup>
+  <col style="width: 55%" />
+  <col style="width: 44%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Checkbox</th>
+  <th>Effect</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Capture</strong></td>
+  <td>Whether this view is rendered at all</td>
+  </tr>
+  <tr>
+  <td><strong>Show cast</strong></td>
+  <td>Whether cast models replace the IOS meshes in this view</td>
+  </tr>
+  <tr>
+  <td><strong>Show legend</strong></td>
+  <td>Whether the occlusion-map colour bar is included</td>
+  </tr>
+  </tbody>
+  </table>
+  <h2 id="other-settings">Other Settings</h2>
+  <table style="width:100%;">
+  <colgroup>
+  <col style="width: 33%" />
+  <col style="width: 27%" />
+  <col style="width: 39%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Parameter</th>
+  <th>Default</th>
+  <th>Description</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><strong>Resolution</strong></td>
+  <td><code>500 px</code></td>
+  <td>Width and height of each output PNG</td>
+  </tr>
+  <tr>
+  <td><strong>Normalize zoom</strong></td>
+  <td>On</td>
+  <td>All timepoints in the same view share the same camera zoom,
+  computed from the combined bounding box</td>
+  </tr>
+  </tbody>
+  </table>
+  <h2 id="file-names">File Names</h2>
+  <p>Files are saved as <code>{label}_{view}.png</code>,
+  e.g. <code>T0_upper.png</code>, <code>T1_butterfly.png</code>,
+  <code>T0_left.png</code>.</p>
+  <blockquote>
+  <p><strong>Note:</strong> Markup nodes (trim curves, bounds boxes) are
+  automatically hidden during screenshot capture and their previous
+  visibility is restored afterwards.</p>
+  </blockquote>
+  <p><img src="Screenshots/09_screenshots.png" /></p>
+  <hr />
+  <h1 id="step-10-generate-report">Step 10: Generate Report</h1>
+  <p>Click <strong>Generate report</strong> after taking
+  screenshots.</p>
+  <p>The module renders a Jinja2 HTML template and saves two files to
+  the screenshot folder:</p>
+  <table>
+  <colgroup>
+  <col style="width: 28%" />
+  <col style="width: 71%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>File</th>
+  <th>Generated when</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td><code>occlusion_analysis_report.html</code></td>
+  <td>Always; self-contained with base-64 embedded images</td>
+  </tr>
+  <tr>
+  <td><code>occlusion_analysis_report.pdf</code></td>
+  <td>When WeasyPrint is available (installed automatically on first
+  run)</td>
+  </tr>
+  </tbody>
+  </table>
+  <h2 id="report-contents">Report Contents</h2>
+  <ul>
+  <li>Title block with generation date</li>
+  <li>Per-timepoint rendering grids (occlusal, buccal/lateral
+  views)</li>
+  <li>Cross-timepoint time-series image grid</li>
+  <li><strong>Vectors table:</strong> OCA, OCN, OCN cluster, OAS per
+  timepoint at the primary τ</li>
+  <li><strong>Summary table:</strong> Pairwise deltas with robustness
+  flags and colour-coded verdicts</li>
+  </ul>
+  <hr />
+  <h1 id="tips-and-notes">Tips and Notes</h1>
+  <ul>
+  <li><strong>Save the scene regularly:</strong> Timepoint assignments,
+  trim curves, ROI boxes, result tables, and cast models all persist in
+  the <code>.mrb</code> scene file. Save frequently to avoid re-running
+  computation-intensive steps.</li>
+  <li><strong>Midline at x = 0:</strong> The cast base and the
+  left/right OAS split are computed relative to x = 0. Ensure the dental
+  midline is centred on x = 0 when orienting T0.</li>
+  <li><strong>Apply trim to all models:</strong> When all timepoints are
+  co-registered and the same arch outline applies to all, use <em>Apply
+  to all models</em> to save time.</li>
+  <li><strong>Reuse trim nodes:</strong> After the first trim, the curve
+  and bounds box nodes are kept in the scene. Open the trim dialog for
+  any other model and select the existing node from the dropdown instead
+  of redrawing.</li>
+  <li><strong>Sensitivity analysis:</strong> If the verdict is
+  <em>Inconclusive</em> due to sign inconsistency across thresholds,
+  inspect the raw delta values at each τ in the
+  <code>OcclusionDeltas</code> table to understand which threshold
+  drives the inconsistency.</li>
+  <li><strong>Multiple cases:</strong> Run the full workflow once per
+  patient case. Save each case as a separate <code>.mrb</code> file and
+  transfer the relevant rows from the <code>OcclusionSummary</code> CSV
+  to a master spreadsheet.</li>
+  </ul>
+  <hr />
+  <h1 id="troubleshooting">Troubleshooting</h1>
+  <table>
+  <colgroup>
+  <col style="width: 27%" />
+  <col style="width: 45%" />
+  <col style="width: 27%" />
+  </colgroup>
+  <thead>
+  <tr>
+  <th>Problem</th>
+  <th>Possible cause</th>
+  <th>Solution</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+  <td>Trim removes the entire model</td>
+  <td>Curve control points placed outside the model’s XY bounds; or
+  bounds box too small</td>
+  <td>Check the curve/box in the anterior or top view before applying.
+  Adjust handles.</td>
+  </tr>
+  <tr>
+  <td>ICP converges to wrong position</td>
+  <td>Follow-up scan starts in a very different orientation</td>
+  <td>Manually pre-align the model to T0 in the Transforms module before
+  running ICP</td>
+  </tr>
+  <tr>
+  <td>OCA = 0 at all timepoints</td>
+  <td>Models not in MIP (not touching); or τ too small</td>
+  <td>Verify scans are in MIP; increase τ; inspect gap in the 3D
+  view</td>
+  </tr>
+  <tr>
+  <td>OAS returns <em>n/a</em></td>
+  <td>OCA = 0 — no contact detected</td>
+  <td>See <em>OCA = 0</em> row above</td>
+  </tr>
+  <tr>
+  <td>Cast wall artefacts (vertical stripes)</td>
+  <td>Irregular vertex spacing on the IOS mesh boundary</td>
+  <td>Click <strong>Smooth cast walls</strong> to resample the boundary
+  loop</td>
+  </tr>
+  <tr>
+  <td>PDF not generated</td>
+  <td>WeasyPrint not installed or install failed</td>
+  <td>Check the Slicer Python console for error output; install
+  WeasyPrint manually via <em>pip install weasyprint</em> in the Slicer
+  Python interactor</td>
+  </tr>
+  <tr>
+  <td>Verdict always <em>Inconclusive</em></td>
+  <td>Sign of one or more deltas inconsistent across sensitivity
+  thresholds</td>
+  <td>Inspect individual τ columns in <code>OcclusionDeltas</code>;
+  consider whether the clinical change is within measurement
+  uncertainty</td>
+  </tr>
+  <tr>
+  <td>Report images missing</td>
+  <td>Screenshots not yet taken, or output folder changed</td>
+  <td>Run <em>Take screenshots</em> with the same output folder before
+  generating the report</td>
+  </tr>
+  <tr>
+  <td>Cast label engraving not working</td>
+  <td>Known limitation: boolean subtraction fails for the non-convex hex
+  prism geometry</td>
+  <td>Label is shown as 0.2 mm raised text — this is expected and does
+  not affect analysis results</td>
+  </tr>
+  </tbody>
+  </table>
+	</div>
+      </main>
+    </div>
+    
+    <!-- After body contents -->
+        <!-- Add comment hosting service here (optional) -->
+
+        <!-- Footer -->
+        <footer class="footer bd-footer bg-body-tertiary mt-auto py-md-3 py-4">
+          <div class="container text-body-secondary py-md-3 py-4" align="center">
+            <!-- Update licences -->
+            Content is licensed under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>
+            &nbsp;|&nbsp;
+            Sourcecode is licensed under <a href="https://www.gnu.org/licenses/gpl-3.0.en.html" target="_blank" rel="noopener">GPL-3.0</a>
+            <br />
+            <!-- Please keep the following line -->
+            Built by <a href="https://github.com/ashki23/pandoc-bootstrap" target="_blank" rel="noopener">pandoc-bootstrap</a> theme
+            <br />
+            <!-- Update copyright -->
+            &copy; Johannes Schulze
+          </div>
+        </footer>
+
+        <!-- Add global site tag (gtag.js) and site analytics here (optional) -->
+        
+    <!-- Bootstrap Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    
+    <!-- Highlight.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js" integrity="sha512-6yoqbrcLAHDWAdQmiRlHG4+m0g/CT/V9AGyxabG8j7Jk8j3r3K6due7oqpiRMZqcYe9WM2gPcaNNxnl2ux+3tA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+        <!-- Mathjax -->
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        
+    <!-- Custom Scripts -->
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+	  const htmlElement = document.documentElement;
+	  const highlightStyle = document.getElementById("highlight-style");
+	  
+	  // Function to update Highlight.js style based on theme
+	  const updateHighlightStyle = (theme) => {
+              const lightTheme = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/stackoverflow-light.min.css";
+              const darkTheme = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css";
+              highlightStyle.href = theme === "dark" ? darkTheme : lightTheme;
+	  };
+	  
+	  // Function to set the theme
+	  const setTheme = (theme) => {
+              htmlElement.setAttribute("data-bs-theme", theme);
+              localStorage.setItem("theme", theme); // Save the theme to localStorage
+              updateHighlightStyle(theme);
+	  };
+	  
+	  // Get saved theme from localStorage or fallback to default ("light")
+	  const savedTheme = localStorage.getItem("theme") || "light";
+	  setTheme(savedTheme);
+	  
+	  // Event listener for theme dropdown
+	  document.querySelectorAll(".dropdown-item").forEach((item) => {
+              item.addEventListener("click", (e) => {
+		  e.preventDefault();
+		  const selectedTheme = item.getAttribute("data-theme");
+		  setTheme(selectedTheme);
+              });
+	  });
+	  
+	  // Initialize Highlight.js
+	  hljs.highlightAll();
+      });
+    </script>
+  </body>
+</html>
