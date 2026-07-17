@@ -641,7 +641,7 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
         # Switch to the axis that shows the XY trim plane:
         # upper → look from inferior (camera below, looking up)
         # lower → look from superior (camera above, looking down)
-        threeDView =    
+        threeDView = slicer.app.layoutManager().threeDWidget(0).threeDView()   
         axis = ctk.ctkAxesWidget.Inferior if jaw == 'upper' else ctk.ctkAxesWidget.Superior
         threeDView.lookFromAxis(axis)
 
