@@ -16,6 +16,7 @@ than calling vtkImplicitPolyDataDistance point-by-point from Python,
 giving ~50× speedup on dense IOS meshes.
 """
 
+from pathlib import Path
 import numpy as np
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy, numpy_to_vtk
@@ -228,6 +229,18 @@ class OcclusionAnalysisModuleWidget(ScriptedLoadableModuleWidget, VTKObservation
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
         self.logic = OcclusionAnalysisModuleLogic()
+
+        # ── Logo ────────────────────────────────────────────────────
+        logoLabel = qt.QLabel()
+        logoPath = (Path(__file__).parent / "Resources" / "Icons"
+                    / "OcclusionAnalysisModule_wide.png").resolve()
+        print(logoPath)
+        pixmap = qt.QPixmap(str(logoPath))
+        if not pixmap.isNull():
+            logoLabel.setPixmap(pixmap.scaledToWidth(300, qt.Qt.SmoothTransformation))
+        logoLabel.setAlignment(qt.Qt.AlignCenter)
+        self.layout.addWidget(logoLabel)
+        self.layout.addSpacing(30)
 
         # ── Timepoints ────────────────────────────────────────────────────
         tpGroup = ctk.ctkCollapsibleButton()
